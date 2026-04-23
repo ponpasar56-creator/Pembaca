@@ -1,0 +1,498 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
+    <title>DocuMind Vault - HD Reader & Library</title>
+    
+    <!-- PWA Manifest (Dinamis dalam satu file) -->
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#1e4a6e">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    
+    <!-- PDF JS & Mammoth -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
+    
+    <style>
+        :root { --primary: #1e4a6e; --bg: #f8fafc; }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        body { font-family: 'Inter', sans-serif; background: var(--bg); height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
+
+        /* Header */
+        .app-bar {
+            background: white; padding: 10px 15px; display: flex; align-items: center; 
+            justify-content: space-between; gap: 10px; z-index: 100; border-bottom: 1px solid #e2e8f0;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+        }
+        
+        .logo-area { display: flex; align-items: center; gap: 8px; }
+        .logo-icon img { width: 32px; height: 32px; border-radius: 8px; object-fit: cover; }
+        .logo-text { font-weight: 800; font-size: 1.2rem; color: var(--primary); display: none; background: linear-gradient(135deg, #1e4a6e, #0f2c40); -webkit-background-clip: text; background-clip: text; color: transparent; }
+        @media (min-width: 480px) { .logo-text { display: block; } }
+
+        .search-box {
+            flex: 1; display: flex; align-items: center; background: #f1f5f9; 
+            padding: 6px 12px; border-radius: 50px; border: 1px solid #cbd5e1;
+            transition: all 0.2s;
+        }
+        .search-box:focus-within { border-color: var(--primary); background: white; box-shadow: 0 0 0 2px rgba(30,74,110,0.2); }
+        .search-box input { flex: 1; border: none; background: transparent; outline: none; font-size: 14px; min-width: 50px; }
+
+        /* Main Layout */
+        .main-layout { flex: 1; display: flex; overflow: hidden; position: relative; }
+
+        /* Sidebar Library */
+        .sidebar {
+            width: 280px; background: white; border-right: 1px solid #e2e8f0;
+            display: flex; flex-direction: column; transition: transform 0.25s cubic-bezier(0.2, 0.9, 0.4, 1.1);
+            position: absolute; left: 0; top: 0; bottom: 0; z-index: 200;
+            transform: translateX(-100%);
+            box-shadow: 2px 0 12px rgba(0,0,0,0.05);
+        }
+        .sidebar.active { transform: translateX(0); }
+        .sidebar-header { padding: 16px; border-bottom: 1px solid #f1f5f9; display: flex; justify-content: space-between; align-items: center; background: #fefefe; }
+        
+        .file-list { flex: 1; overflow-y: auto; padding: 12px; }
+        .file-card {
+            background: #fff; border: 1px solid #e2e8f0; padding: 12px; border-radius: 14px;
+            margin-bottom: 10px; cursor: pointer; display: flex; justify-content: space-between; align-items: center;
+            transition: all 0.2s;
+        }
+        .file-card:hover { border-color: var(--primary); background: #f9fcff; transform: translateY(-1px); box-shadow: 0 4px 8px rgba(0,0,0,0.05); }
+        .file-card.active { background: #eef4ff; border-color: var(--primary); border-left: 4px solid var(--primary); }
+
+        /* Viewer HD */
+        .viewer-container { flex: 1; overflow: auto; background: #4a4e54; display: flex; flex-direction: column; align-items: center; padding: 20px; }
+        .page-wrapper { position: relative; background: white; margin-bottom: 24px; box-shadow: 0 8px 20px rgba(0,0,0,0.4); border-radius: 4px; overflow: hidden; }
+        canvas { display: block; max-width: 100%; height: auto; box-shadow: 0 1px 2px rgba(0,0,0,0.1); }
+        
+        /* Text Layer untuk highlight dan search */
+        .text-layer { position: absolute; inset: 0; pointer-events: none; opacity: 0.25; overflow: hidden; }
+        .text-layer span { position: absolute; color: transparent; white-space: pre; transform-origin: 0% 0%; }
+
+        /* Highlight styles */
+        mark.highlight { background: #FFD966; color: #1e2a3a; border-radius: 3px; padding: 0 2px; box-shadow: 0 0 0 1px #ffb347; }
+        mark.highlight.active { background: #f39c12; color: white; box-shadow: 0 0 0 2px #e67e22; font-weight: bold; transition: 0.1s; }
+
+        /* Floating Buttons */
+        .fab-group { position: fixed; bottom: 24px; right: 24px; display: flex; flex-direction: column; gap: 12px; z-index: 300; }
+        .fab { width: 56px; height: 56px; border-radius: 28px; border: none; color: white; box-shadow: 0 6px 14px rgba(0,0,0,0.25); display: flex; align-items: center; justify-content: center; font-size: 22px; cursor: pointer; transition: transform 0.1s, opacity 0.2s; }
+        .fab:active { transform: scale(0.94); }
+        .btn-add { background: var(--primary); background: linear-gradient(145deg, #1f5a82, #163d57); }
+        .btn-lib { background: #475569; }
+
+        /* Loading Overlay HD */
+        #loading { position: fixed; inset: 0; background: rgba(0,0,0,0.85); backdrop-filter: blur(6px); color: white; display: none; flex-direction: column; align-items: center; justify-content: center; z-index: 1000; font-size: 1.2rem; }
+        
+        /* Responsive for DOCX view */
+        .docx-viewer { background: white; padding: 40px; width: 100%; max-width: 900px; border-radius: 20px; margin: 20px; box-shadow: 0 12px 28px rgba(0,0,0,0.3); font-family: 'Inter', serif; line-height: 1.6; }
+        
+        button { cursor: pointer; }
+        .empty-library { text-align: center; color: #94a3b8; padding: 40px 20px; font-size: 14px; }
+    </style>
+</head>
+<body>
+
+<div id="loading"><i class="fas fa-spinner fa-spin fa-3x"></i><p style="margin-top:16px; font-weight:500;">Memuat dokumen dengan presisi tinggi...</p></div>
+
+<header class="app-bar">
+    <div class="logo-area">
+        <div class="logo-icon">
+            <!-- Gunakan icon dari assets online / base64 fallback jika gambar 109631.png tidak ditemukan, tapi kita arahkan ke repository -->
+            <img src="https://ponpasar56-creator.github.io/Pembaca/109631.png" alt="Logo" onerror="this.src='data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' viewBox=\'0 0 100 100\'%3E%3Crect width=\'100\' height=\'100\' fill=\'%231e4a6e\'/%3E%3Ctext x=\'50\' y=\'67\' font-size=\'50\' text-anchor=\'middle\' fill=\'white\'%3EDV%3C/text%3E%3C/svg%3E'">
+        </div>
+        <div class="logo-text">DocuMind Vault</div>
+    </div>
+    <div class="search-box">
+        <input type="text" id="searchInput" placeholder="Telusuri kata dalam dokumen...">
+        <span id="matchStatus" style="font-size:12px; font-weight:700; margin: 0 8px; background:#e2e8f0; padding:2px 6px; border-radius:20px;">0/0</span>
+        <button onclick="navSearch(-1)" style="border:none; background:none; padding:0 6px;"><i class="fas fa-chevron-up"></i></button>
+        <button onclick="navSearch(1)" style="border:none; background:none; padding:0 6px;"><i class="fas fa-chevron-down"></i></button>
+    </div>
+</header>
+
+<div class="main-layout">
+    <aside class="sidebar" id="sidebar">
+        <div class="sidebar-header">
+            <strong><i class="fas fa-book-open"></i> Pustaka Cerdas</strong>
+            <button onclick="toggleSidebar()" style="border:none; background:none; font-size:1.2rem;"><i class="fas fa-times"></i></button>
+        </div>
+        <div class="file-list" id="fileList"></div>
+        <div style="padding:12px; border-top:1px solid #eef2f6; font-size:11px; color:#94a3b8; text-align:center;">PDF · DOCX | Simpan lokal</div>
+    </aside>
+
+    <main class="viewer-container" id="viewer">
+        <div style="color:#ddd; text-align:center; margin-top:20vh;">
+            <i class="fas fa-folder-open fa-5x" style="opacity:0.4;"></i>
+            <p style="margin-top:20px; font-weight:500;">Klik <i class="fas fa-plus-circle"></i> untuk tambah dokumen</p>
+            <p style="font-size:13px;">PDF / DOCX didukung. Pencarian cerdas dan highlight.</p>
+        </div>
+    </main>
+</div>
+
+<div class="fab-group">
+    <button class="fab btn-lib" onclick="toggleSidebar()"><i class="fas fa-folder"></i></button>
+    <button class="fab btn-add" onclick="document.getElementById('fileInput').click()"><i class="fas fa-plus"></i></button>
+</div>
+
+<input type="file" id="fileInput" hidden accept=".pdf,.docx">
+
+<script>
+    // Konfigurasi PDF.js worker (CDN resmi)
+    const pdfjsLib = window['pdfjs-dist/build/pdf'];
+    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';
+    
+    // Penyimpanan data ke localStorage (prefix stabil)
+    let dbFiles = [];
+    let currentDisplayId = null;
+    let matches = [];
+    let currentMatchIdx = -1;
+    
+    // Inisialisasi muat dari localStorage
+    function loadDatabase() {
+        const stored = localStorage.getItem('docu_vault_v4');
+        if(stored) {
+            dbFiles = JSON.parse(stored);
+        } else {
+            // contoh dummy edukasi
+            dbFiles = [];
+        }
+        renderLibrary();
+    }
+    
+    function saveDatabase() {
+        localStorage.setItem('docu_vault_v4', JSON.stringify(dbFiles));
+    }
+    
+    function toggleSidebar() { 
+        document.getElementById('sidebar').classList.toggle('active'); 
+    }
+    
+    // Render daftar file di sidebar
+    function renderLibrary() {
+        const list = document.getElementById('fileList');
+        if(!dbFiles.length) {
+            list.innerHTML = `<div class="empty-library"><i class="fas fa-box-open"></i><br>Belum ada dokumen.<br>Tekan + untuk menambah PDF/DOCX</div>`;
+            return;
+        }
+        list.innerHTML = dbFiles.map(f => `
+            <div class="file-card ${currentDisplayId === f.id ? 'active' : ''}" onclick="displayFile('${f.id}')">
+                <div style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:190px; font-size:13px; font-weight:500;">
+                    <i class="fas fa-${f.type === 'pdf' ? 'file-pdf' : 'file-word'}"></i> ${escapeHtml(f.name)}
+                </div>
+                <i class="fas fa-trash-alt" style="color:#f97316; padding:6px; border-radius:30px;" onclick="event.stopPropagation(); deleteFile('${f.id}')"></i>
+            </div>
+        `).join('');
+    }
+    
+    function escapeHtml(str) {
+        if(!str) return '';
+        return str.replace(/[&<>]/g, function(m) {
+            if(m === '&') return '&amp;';
+            if(m === '<') return '&lt;';
+            if(m === '>') return '&gt;';
+            return m;
+        }).replace(/[\uD800-\uDBFF][\uDC00-\uDFFF]/g, function(c) {
+            return c;
+        });
+    }
+    
+    async function deleteFile(id) {
+        if(confirm("Hapus dokumen permanen dari pustaka?")) {
+            dbFiles = dbFiles.filter(f => f.id !== id);
+            saveDatabase();
+            if(currentDisplayId === id) {
+                document.getElementById('viewer').innerHTML = `<div style="color:#ddd; text-align:center; margin-top:20vh;"><i class="fas fa-file-alt fa-4x" style="opacity:0.4;"></i><p>Dokumen dihapus</p></div>`;
+                currentDisplayId = null;
+                clearSearchHighlights();
+                matches = [];
+                document.getElementById('matchStatus').innerText = '0/0';
+            }
+            renderLibrary();
+        }
+    }
+    
+    function clearSearchHighlights() {
+        // Hapus semua mark dalam viewer secara aman
+        const viewer = document.getElementById('viewer');
+        const marks = viewer.querySelectorAll('mark.highlight');
+        marks.forEach(mark => {
+            const parent = mark.parentNode;
+            if(parent) {
+                const textNode = document.createTextNode(mark.textContent);
+                parent.replaceChild(textNode, mark);
+                parent.normalize();
+            }
+        });
+    }
+    
+    // Fungsi pencarian dan highlight ulang (berdasarkan teks DOM saat ini)
+    function performSearch(queryRaw) {
+        const query = queryRaw.toLowerCase().trim();
+        const viewer = document.getElementById('viewer');
+        if(!viewer) return;
+        // Bersihkan highlight lama
+        clearSearchHighlights();
+        matches = [];
+        if(query.length === 0) {
+            document.getElementById('matchStatus').innerText = '0/0';
+            currentMatchIdx = -1;
+            return;
+        }
+        
+        // TreeWalker untuk semua teks di dalam viewer (termasuk text-layer? text-layer opacity rendah tidak mengganggu visual tapi jangan double)
+        // Fokus pada node teks dalam main container viewer, namun hindari text-layer karena itu semi-transparan untuk rendering internal. Lebih aman handle DOM murni
+        const walker = document.createTreeWalker(viewer, NodeFilter.SHOW_TEXT, {
+            acceptNode: function(node) {
+                // skip text-layer, jangan double highlight
+                if(node.parentElement && (node.parentElement.classList && node.parentElement.classList.contains('text-layer'))) {
+                    return NodeFilter.FILTER_REJECT;
+                }
+                return NodeFilter.FILTER_ACCEPT;
+            }
+        });
+        const textNodes = [];
+        let node;
+        while(node = walker.nextNode()) {
+            if(node.nodeValue && node.nodeValue.trim().length > 0) textNodes.push(node);
+        }
+        
+        textNodes.forEach(textNode => {
+            const originalText = textNode.nodeValue;
+            if(originalText.toLowerCase().includes(query)) {
+                const span = document.createElement('span');
+                const parts = originalText.split(new RegExp(`(${escapeRegex(query)})`, 'gi'));
+                parts.forEach(part => {
+                    if(part && part.toLowerCase() === query) {
+                        const mark = document.createElement('mark');
+                        mark.className = 'highlight';
+                        mark.textContent = part;
+                        matches.push(mark);
+                        span.appendChild(mark);
+                    } else if(part) {
+                        span.appendChild(document.createTextNode(part));
+                    }
+                });
+                textNode.parentNode.replaceChild(span, textNode);
+            }
+        });
+        
+        if(matches.length > 0) {
+            currentMatchIdx = 0;
+            updateMatchStatus();
+            scrollToCurrentMatch();
+        } else {
+            currentMatchIdx = -1;
+            document.getElementById('matchStatus').innerText = '0/0';
+        }
+    }
+    
+    function escapeRegex(str) {
+        return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    }
+    
+    function updateMatchStatus() {
+        const statusSpan = document.getElementById('matchStatus');
+        if(matches.length) {
+            statusSpan.innerText = `${currentMatchIdx+1}/${matches.length}`;
+            matches.forEach((m, idx) => {
+                if(idx === currentMatchIdx) m.classList.add('active');
+                else m.classList.remove('active');
+            });
+        } else {
+            statusSpan.innerText = '0/0';
+        }
+    }
+    
+    function scrollToCurrentMatch() {
+        if(matches[currentMatchIdx]) {
+            matches[currentMatchIdx].scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+    }
+    
+    function navSearch(delta) {
+        if(!matches.length) return;
+        currentMatchIdx = (currentMatchIdx + delta + matches.length) % matches.length;
+        updateMatchStatus();
+        scrollToCurrentMatch();
+    }
+    
+    // Fungsi utama display file (PDF atau DOCX)
+    async function displayFile(id) {
+        const fileObj = dbFiles.find(f => f.id === id);
+        if(!fileObj) return;
+        currentDisplayId = id;
+        renderLibrary(); // update active class
+        
+        const loader = document.getElementById('loading');
+        const viewer = document.getElementById('viewer');
+        loader.style.display = 'flex';
+        viewer.innerHTML = '';
+        // hilangkan sidebar jika aktif
+        if(document.getElementById('sidebar').classList.contains('active')) toggleSidebar();
+        // reset pencarian
+        document.getElementById('searchInput').value = '';
+        clearSearchHighlights();
+        matches = [];
+        document.getElementById('matchStatus').innerText = '0/0';
+        
+        try {
+            const binaryString = atob(fileObj.data);
+            const bytes = new Uint8Array(binaryString.length);
+            for(let i = 0; i < binaryString.length; i++) bytes[i] = binaryString.charCodeAt(i);
+            
+            if(fileObj.type === 'pdf') {
+                const loadingTask = pdfjsLib.getDocument({ data: bytes.buffer, useSystemFonts: true });
+                const pdfDoc = await loadingTask.promise;
+                for(let pageNum = 1; pageNum <= pdfDoc.numPages; pageNum++) {
+                    const page = await pdfDoc.getPage(pageNum);
+                    // Skala HD 2.0 untuk rendering tajam
+                    const scale = 2.0;
+                    const viewport = page.getViewport({ scale });
+                    
+                    const wrapper = document.createElement('div');
+                    wrapper.className = 'page-wrapper';
+                    wrapper.style.position = 'relative';
+                    const canvas = document.createElement('canvas');
+                    canvas.width = viewport.width;
+                    canvas.height = viewport.height;
+                    canvas.style.width = '100%';
+                    canvas.style.height = 'auto';
+                    const ctx = canvas.getContext('2d');
+                    
+                    const textLayerDiv = document.createElement('div');
+                    textLayerDiv.className = 'text-layer';
+                    textLayerDiv.style.position = 'absolute';
+                    textLayerDiv.style.top = '0';
+                    textLayerDiv.style.left = '0';
+                    textLayerDiv.style.pointerEvents = 'none';
+                    
+                    wrapper.appendChild(canvas);
+                    wrapper.appendChild(textLayerDiv);
+                    viewer.appendChild(wrapper);
+                    
+                    await page.render({ canvasContext: ctx, viewport }).promise;
+                    
+                    // Dapatkan teks layer untuk membantu highlight (tetapi kita menggunakan DOM asli highlight dari teks kami)
+                    // Namun tetap agar layer teks ada untuk integritas internal PDF.js (tidak mempengaruhi pencarian utama)
+                    try {
+                        const textContent = await page.getTextContent();
+                        // render text layer tapi tetap hanya sebagai background referensi, highlight kita akan pakai pendekatan terpisah
+                        await pdfjsLib.renderTextLayer({
+                            textContent,
+                            container: textLayerDiv,
+                            viewport,
+                            textDivs: []
+                        }).promise;
+                    } catch(txtErr) { console.warn(txtErr); }
+                }
+            } 
+            else if(fileObj.type === 'docx') {
+                const result = await mammoth.convertToHtml({ arrayBuffer: bytes.buffer });
+                const docxContainer = document.createElement('div');
+                docxContainer.className = 'docx-viewer';
+                docxContainer.innerHTML = result.value;
+                viewer.appendChild(docxContainer);
+            } else {
+                viewer.innerHTML = `<div class="docx-viewer" style="color:red;">Format tidak didukung</div>`;
+            }
+        } catch(err) {
+            console.error(err);
+            viewer.innerHTML = `<div style="background:white; padding:20px; margin:20px; border-radius:16px; color:#b91c1c;"><i class="fas fa-exclamation-triangle"></i> Gagal memuat: ${err.message}</div>`;
+        } finally {
+            loader.style.display = 'none';
+            // Tambahkan event listener ulang untuk pencarian karena DOM sudah berubah
+            const currentSearchVal = document.getElementById('searchInput').value;
+            if(currentSearchVal && currentSearchVal.length > 1) {
+                performSearch(currentSearchVal);
+            }
+        }
+    }
+    
+    // Event handler untuk upload file
+    document.getElementById('fileInput').onchange = async function(e) {
+        const file = e.target.files[0];
+        if(!file) return;
+        const ext = file.name.split('.').pop().toLowerCase();
+        if(ext !== 'pdf' && ext !== 'docx') {
+            alert("Hanya file PDF dan DOCX yang didukung.");
+            return;
+        }
+        const reader = new FileReader();
+        reader.onload = function(evt) {
+            const base64 = btoa(
+                new Uint8Array(evt.target.result).reduce((data, byte) => data + String.fromCharCode(byte), '')
+            );
+            const newDoc = {
+                id: Date.now().toString() + '-' + Math.random().toString(36),
+                name: file.name,
+                data: base64,
+                type: ext
+            };
+            dbFiles.unshift(newDoc);
+            saveDatabase();
+            renderLibrary();
+            displayFile(newDoc.id);
+        };
+        reader.readAsArrayBuffer(file);
+        e.target.value = '';
+    };
+    
+    // Inisialisasi search input listener
+    function setupSearchListener() {
+        const searchBox = document.getElementById('searchInput');
+        let debounceTimer;
+        searchBox.addEventListener('input', function() {
+            clearTimeout(debounceTimer);
+            debounceTimer = setTimeout(() => {
+                const query = this.value;
+                if(currentDisplayId !== null) {
+                    performSearch(query);
+                } else {
+                    // tidak ada dokumen aktif
+                    document.getElementById('matchStatus').innerText = '0/0';
+                }
+            }, 200);
+        });
+    }
+    
+    // Service Worker Registration + PWA support agar bisa dibungkus PWABuilder dengan asset icon dari repo
+    if('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+            navigator.serviceWorker.register('sw.js').then(reg => {
+                console.log('Service Worker registered', reg);
+            }).catch(err => console.warn('SW reg gagal', err));
+        });
+    }
+    
+    // Tombol pintasan
+    window.toggleSidebar = toggleSidebar;
+    window.displayFile = displayFile;
+    window.deleteFile = deleteFile;
+    window.navSearch = navSearch;
+    window.performSearchGlobal = (q) => performSearch(q);
+    
+    // Load database & render
+    loadDatabase();
+    setupSearchListener();
+    
+    // Jika ada file pertama otomatis? tidak, biarkan user pilih
+    // Jika sebelumnya ada file dan currentDisplayId null, jangan auto load.
+</script>
+
+<!-- Service Worker Implementation (sw.js akan dipanggil terpisah, namun kita buat juga inline dengan fetch strategi jika tidak ada file eksternal? 
+Tetapi karena file sw.js telah ada di repo, browser akan mengambilnya. Untuk memastikan cache penuh, kita tambahkan pendaftaran yang baik -->
+<script>
+    // Fallback: Jika sw.js tidak ada di repo, kita buat secara dinamis? tidak perlu, karena user akan punya file sw.js di root.
+    // Untuk meyakinkan PWABuilder bisa membaca dan isi cache, kita sudah menyertakan referensi sw.js dalam scope.
+    // Di file index.html ini, aset icon https://ponpasar56-creator.github.io/Pembaca/109631.png akan dipakai.
+    console.log("DocuMind Vault HD - Siap membaca dokumen dengan pencarian akurat.");
+</script>
+</body>
+</html>
