@@ -1,0 +1,698 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
+    <title>DocuMind Vault - Smart Document Reader</title>
+    
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#1e4a6e">
+    
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
+    
+    <style>
+        :root { --primary: #1e4a6e; --bg: #f8fafc; }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        body { font-family: 'Inter', sans-serif; background: var(--bg); height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
+
+        .app-bar {
+            background: white; padding: 10px 15px; display: flex; align-items: center; 
+            justify-content: space-between; gap: 10px; z-index: 100; border-bottom: 1px solid #e2e8f0;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+        }
+        
+        .logo-area { display: flex; align-items: center; gap: 8px; }
+        .logo-icon { 
+            width: 32px; height: 32px; background: linear-gradient(135deg, #1e4a6e, #0f2c40); 
+            border-radius: 8px; display: flex; align-items: center; justify-content: center;
+            color: white; font-weight: bold; font-size: 14px;
+        }
+        .logo-text { font-weight: 800; font-size: 1.1rem; color: var(--primary); display: none; }
+        @media (min-width: 480px) { .logo-text { display: block; } }
+
+        .search-box {
+            flex: 1; display: flex; align-items: center; background: #f1f5f9; 
+            padding: 6px 12px; border-radius: 50px; border: 1px solid #cbd5e1;
+            transition: all 0.2s;
+        }
+        .search-box:focus-within { border-color: var(--primary); background: white; }
+        .search-box input { flex: 1; border: none; background: transparent; outline: none; font-size: 14px; }
+
+        .main-layout { flex: 1; display: flex; overflow: hidden; position: relative; }
+
+        .sidebar {
+            width: 280px; background: white; border-right: 1px solid #e2e8f0;
+            display: flex; flex-direction: column; transition: transform 0.25s ease;
+            position: absolute; left: 0; top: 0; bottom: 0; z-index: 200;
+            transform: translateX(-100%);
+            box-shadow: 2px 0 12px rgba(0,0,0,0.1);
+        }
+        .sidebar.active { transform: translateX(0); }
+        .sidebar-header { padding: 16px; border-bottom: 1px solid #f1f5f9; display: flex; justify-content: space-between; align-items: center; }
+        
+        .file-list { flex: 1; overflow-y: auto; padding: 12px; }
+        .file-card {
+            background: #fff; border: 1px solid #e2e8f0; padding: 10px 12px; border-radius: 12px;
+            margin-bottom: 8px; cursor: pointer; display: flex; justify-content: space-between; align-items: center;
+            transition: all 0.2s;
+        }
+        .file-card:hover { border-color: var(--primary); background: #f9fcff; }
+        .file-card.active { background: #eef4ff; border-color: var(--primary); border-left: 3px solid var(--primary); }
+
+        .viewer-container { 
+            flex: 1; overflow: auto; background: #525659; display: flex; 
+            flex-direction: column; align-items: center; padding: 15px; 
+        }
+        .page-wrapper { 
+            position: relative; background: white; margin-bottom: 16px; 
+            box-shadow: 0 4px 12px rgba(0,0,0,0.3); border-radius: 4px; 
+        }
+        canvas { display: block; max-width: 100%; height: auto; }
+        
+        /* Text layer untuk highlight interaktif */
+        .text-layer { 
+            position: absolute; top: 0; left: 0; right: 0; bottom: 0;
+            pointer-events: none; 
+            overflow: hidden;
+        }
+        .text-layer span {
+            position: absolute;
+            white-space: pre;
+            cursor: text;
+            pointer-events: none;
+            color: transparent;
+            background-color: transparent;
+        }
+        
+        /* Highlight styles */
+        mark.search-highlight {
+            background-color: #ffeb3b;
+            color: #000;
+            padding: 0 2px;
+            border-radius: 2px;
+            box-shadow: 0 0 0 1px #ff9800;
+        }
+        mark.search-highlight.active {
+            background-color: #ff9800;
+            color: white;
+            box-shadow: 0 0 0 2px #e65100;
+        }
+        
+        /* Untuk konten DOCX */
+        .docx-content {
+            background: white; padding: 30px; max-width: 800px; width: 100%;
+            border-radius: 12px; margin: 20px; box-shadow: 0 8px 20px rgba(0,0,0,0.2);
+            font-family: 'Inter', sans-serif;
+            line-height: 1.6;
+        }
+        .docx-content table {
+            border-collapse: collapse;
+            width: 100%;
+            margin: 10px 0;
+        }
+        .docx-content td, .docx-content th {
+            border: 1px solid #ddd;
+            padding: 8px;
+        }
+
+        .fab-group { position: fixed; bottom: 20px; right: 20px; display: flex; flex-direction: column; gap: 10px; z-index: 300; }
+        .fab { 
+            width: 52px; height: 52px; border-radius: 26px; border: none; color: white; 
+            box-shadow: 0 4px 12px rgba(0,0,0,0.25); display: flex; align-items: center; 
+            justify-content: center; font-size: 20px; cursor: pointer; transition: transform 0.1s;
+        }
+        .fab:active { transform: scale(0.95); }
+        .btn-add { background: var(--primary); }
+        .btn-lib { background: #64748b; }
+
+        #loading {
+            position: fixed; inset: 0; background: rgba(0,0,0,0.8); 
+            color: white; display: none; flex-direction: column; 
+            align-items: center; justify-content: center; z-index: 1000;
+        }
+        
+        .toast {
+            position: fixed; bottom: 90px; left: 20px; right: 20px;
+            background: #333; color: white; padding: 12px; border-radius: 12px;
+            text-align: center; z-index: 400; font-size: 13px;
+            animation: fadeInUp 0.3s ease;
+            display: none;
+        }
+        
+        @keyframes fadeInUp {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        
+        .progress-bar {
+            width: 80%; max-width: 300px; height: 4px; background: rgba(255,255,255,0.3);
+            border-radius: 2px; margin-top: 15px; overflow: hidden;
+        }
+        .progress-fill {
+            height: 100%; background: #4ade80; width: 0%; transition: width 0.3s;
+        }
+        
+        .search-info {
+            font-size: 11px;
+            background: #e2e8f0;
+            padding: 2px 8px;
+            border-radius: 20px;
+            font-weight: 600;
+        }
+    </style>
+</head>
+<body>
+
+<div id="loading">
+    <i class="fas fa-spinner fa-spin fa-2x"></i>
+    <p style="margin-top: 12px;">Memuat dokumen...</p>
+    <div class="progress-bar"><div class="progress-fill" id="progressFill"></div></div>
+</div>
+
+<div id="toast" class="toast"></div>
+
+<header class="app-bar">
+    <div class="logo-area">
+        <div class="logo-icon">DV</div>
+        <div class="logo-text">DocuMind Vault</div>
+    </div>
+    <div class="search-box">
+        <input type="text" id="searchInput" placeholder="Cari kata dalam dokumen...">
+        <span id="matchStatus" class="search-info">0/0</span>
+        <button onclick="navigateSearch(-1)" style="border:none; background:none; padding:0 5px;"><i class="fas fa-chevron-up"></i></button>
+        <button onclick="navigateSearch(1)" style="border:none; background:none; padding:0 5px;"><i class="fas fa-chevron-down"></i></button>
+    </div>
+</header>
+
+<div class="main-layout">
+    <aside class="sidebar" id="sidebar">
+        <div class="sidebar-header">
+            <strong><i class="fas fa-book"></i> Pustaka Saya</strong>
+            <button onclick="toggleSidebar()" style="border:none; background:none;"><i class="fas fa-times"></i></button>
+        </div>
+        <div class="file-list" id="fileList"></div>
+        <div style="padding: 12px; font-size: 11px; color: #94a3b8; text-align: center; border-top: 1px solid #e2e8f0;">
+            <i class="fas fa-database"></i> Penyimpanan Lokal
+        </div>
+    </aside>
+
+    <main class="viewer-container" id="viewer">
+        <div style="color: #ccc; text-align: center; margin-top: 100px;">
+            <i class="fas fa-file-alt fa-4x" style="opacity: 0.4;"></i>
+            <p style="margin-top: 15px;">Belum ada dokumen dibuka</p>
+            <p style="font-size: 13px; opacity: 0.7;">Klik + untuk tambah PDF/DOCX</p>
+        </div>
+    </main>
+</div>
+
+<div class="fab-group">
+    <button class="fab btn-lib" onclick="toggleSidebar()"><i class="fas fa-folder"></i></button>
+    <button class="fab btn-add" onclick="document.getElementById('fileInput').click()"><i class="fas fa-plus"></i></button>
+</div>
+
+<input type="file" id="fileInput" hidden accept=".pdf,.docx">
+
+<script>
+    // Konfigurasi PDF.js
+    const pdfjsLib = window['pdfjs-dist/build/pdf'];
+    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';
+    
+    // Global variables
+    let dbFiles = [];
+    let currentFileId = null;
+    let currentPDFDoc = null;
+    let currentFileType = null;
+    let searchMatches = [];
+    let currentMatchIndex = -1;
+    let currentSearchQuery = '';
+    
+    // Load dari localStorage
+    function loadDatabase() {
+        const stored = localStorage.getItem('documind_vault_v2');
+        if(stored) {
+            try {
+                dbFiles = JSON.parse(stored);
+            } catch(e) { dbFiles = []; }
+        }
+        renderLibrary();
+    }
+    
+    function saveDatabase() {
+        localStorage.setItem('documind_vault_v2', JSON.stringify(dbFiles));
+    }
+    
+    function showToast(msg, isError = false) {
+        const toast = document.getElementById('toast');
+        toast.textContent = msg;
+        toast.style.backgroundColor = isError ? '#dc2626' : '#333';
+        toast.style.display = 'block';
+        setTimeout(() => {
+            toast.style.display = 'none';
+        }, 2500);
+    }
+    
+    function toggleSidebar() {
+        document.getElementById('sidebar').classList.toggle('active');
+    }
+    
+    function renderLibrary() {
+        const list = document.getElementById('fileList');
+        if(!dbFiles.length) {
+            list.innerHTML = '<div style="text-align:center; padding:40px; color:#94a3b8;"><i class="fas fa-inbox fa-2x"></i><p style="margin-top:10px;">Kosong</p></div>';
+            return;
+        }
+        list.innerHTML = dbFiles.map(file => `
+            <div class="file-card ${currentFileId === file.id ? 'active' : ''}" onclick="openFile('${file.id}')">
+                <div style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:180px;">
+                    <i class="fas fa-${file.type === 'pdf' ? 'file-pdf' : 'file-word'}"></i> 
+                    ${escapeHtml(file.name.length > 30 ? file.name.substring(0,27)+'...' : file.name)}
+                </div>
+                <i class="fas fa-trash-alt" style="color:#ef4444; padding:5px;" onclick="event.stopPropagation(); deleteFile('${file.id}')"></i>
+            </div>
+        `).join('');
+    }
+    
+    function escapeHtml(str) {
+        if(!str) return '';
+        return str.replace(/[&<>]/g, function(m) {
+            if(m === '&') return '&amp;';
+            if(m === '<') return '&lt;';
+            if(m === '>') return '&gt;';
+            return m;
+        });
+    }
+    
+    async function deleteFile(id) {
+        if(confirm('Hapus dokumen ini dari pustaka?')) {
+            const index = dbFiles.findIndex(f => f.id === id);
+            if(index !== -1) {
+                dbFiles.splice(index, 1);
+                saveDatabase();
+                if(currentFileId === id) {
+                    currentFileId = null;
+                    currentPDFDoc = null;
+                    document.getElementById('viewer').innerHTML = `
+                        <div style="color:#ccc; text-align:center; margin-top:100px;">
+                            <i class="fas fa-file-alt fa-4x" style="opacity:0.4;"></i>
+                            <p style="margin-top:15px;">Dokumen dihapus</p>
+                        </div>`;
+                    document.getElementById('searchInput').value = '';
+                    document.getElementById('matchStatus').innerText = '0/0';
+                    searchMatches = [];
+                }
+                renderLibrary();
+                showToast('Dokumen dihapus');
+            }
+        }
+    }
+    
+    // Upload file
+    document.getElementById('fileInput').onchange = async function(e) {
+        const file = e.target.files[0];
+        if(!file) return;
+        
+        const ext = file.name.split('.').pop().toLowerCase();
+        if(ext !== 'pdf' && ext !== 'docx') {
+            showToast('Hanya file PDF dan DOCX', true);
+            return;
+        }
+        
+        const maxSize = 50 * 1024 * 1024;
+        if(file.size > maxSize) {
+            showToast('Ukuran file maksimal 50MB', true);
+            return;
+        }
+        
+        showToast('Menyimpan dokumen...');
+        
+        const reader = new FileReader();
+        reader.onload = function(evt) {
+            const base64 = btoa(
+                new Uint8Array(evt.target.result).reduce((data, byte) => data + String.fromCharCode(byte), '')
+            );
+            const newDoc = {
+                id: Date.now().toString(),
+                name: file.name,
+                data: base64,
+                type: ext,
+                size: file.size
+            };
+            dbFiles.unshift(newDoc);
+            saveDatabase();
+            renderLibrary();
+            openFile(newDoc.id);
+        };
+        reader.onerror = function() {
+            showToast('Gagal membaca file', true);
+        };
+        reader.readAsArrayBuffer(file);
+        e.target.value = '';
+    };
+    
+    // Open file
+    async function openFile(id) {
+        const file = dbFiles.find(f => f.id === id);
+        if(!file) return;
+        
+        currentFileId = id;
+        currentFileType = file.type;
+        renderLibrary();
+        
+        const loader = document.getElementById('loading');
+        const progressFill = document.getElementById('progressFill');
+        loader.style.display = 'flex';
+        progressFill.style.width = '0%';
+        
+        if(document.getElementById('sidebar').classList.contains('active')) toggleSidebar();
+        
+        const viewer = document.getElementById('viewer');
+        viewer.innerHTML = '';
+        searchMatches = [];
+        currentSearchQuery = '';
+        document.getElementById('searchInput').value = '';
+        document.getElementById('matchStatus').innerText = '0/0';
+        
+        try {
+            const binaryString = atob(file.data);
+            const bytes = new Uint8Array(binaryString.length);
+            for(let i = 0; i < binaryString.length; i++) bytes[i] = binaryString.charCodeAt(i);
+            
+            if(file.type === 'pdf') {
+                await renderPDF(bytes, progressFill);
+            } else if(file.type === 'docx') {
+                await renderDOCX(bytes, progressFill);
+            }
+        } catch(err) {
+            console.error(err);
+            viewer.innerHTML = `<div style="background:white; padding:20px; margin:20px; border-radius:12px; color:#dc2626;">
+                <i class="fas fa-exclamation-triangle"></i> Gagal memuat: ${err.message}
+            </div>`;
+            showToast('Gagal membuka dokumen', true);
+        } finally {
+            loader.style.display = 'none';
+        }
+    }
+    
+    // Render PDF
+    async function renderPDF(bytes, progressFill) {
+        const viewer = document.getElementById('viewer');
+        const loadingTask = pdfjsLib.getDocument({ data: bytes.buffer });
+        currentPDFDoc = await loadingTask.promise;
+        const numPages = currentPDFDoc.numPages;
+        
+        for(let i = 1; i <= numPages; i++) {
+            progressFill.style.width = `${(i / numPages) * 100}%`;
+            
+            const page = await currentPDFDoc.getPage(i);
+            const viewport = page.getViewport({ scale: 1.5 });
+            
+            const wrapper = document.createElement('div');
+            wrapper.className = 'page-wrapper';
+            wrapper.setAttribute('data-page-num', i);
+            
+            const canvas = document.createElement('canvas');
+            canvas.width = viewport.width;
+            canvas.height = viewport.height;
+            canvas.style.maxWidth = '100%';
+            canvas.style.height = 'auto';
+            
+            const textLayerDiv = document.createElement('div');
+            textLayerDiv.className = 'text-layer';
+            textLayerDiv.setAttribute('data-page', i);
+            
+            wrapper.appendChild(canvas);
+            wrapper.appendChild(textLayerDiv);
+            viewer.appendChild(wrapper);
+            
+            await page.render({ canvasContext: canvas.getContext('2d'), viewport }).promise;
+            
+            try {
+                const textContent = await page.getTextContent();
+                // Render text layer dengan positioning yang tepat
+                const renderContext = {
+                    textContent: textContent,
+                    container: textLayerDiv,
+                    viewport: viewport,
+                    textDivs: []
+                };
+                await pdfjsLib.renderTextLayer(renderContext).promise;
+            } catch(e) {
+                console.warn('Text layer error:', e);
+            }
+        }
+    }
+    
+    // Render DOCX
+    async function renderDOCX(bytes, progressFill) {
+        progressFill.style.width = '30%';
+        
+        if(typeof mammoth === 'undefined') {
+            await loadScript('https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js');
+        }
+        progressFill.style.width = '60%';
+        
+        const result = await mammoth.convertToHtml({ arrayBuffer: bytes.buffer });
+        const viewer = document.getElementById('viewer');
+        const container = document.createElement('div');
+        container.className = 'docx-content';
+        container.innerHTML = result.value;
+        viewer.appendChild(container);
+        progressFill.style.width = '100%';
+    }
+    
+    function loadScript(src) {
+        return new Promise((resolve, reject) => {
+            const script = document.createElement('script');
+            script.src = src;
+            script.onload = resolve;
+            script.onerror = reject;
+            document.head.appendChild(script);
+        });
+    }
+    
+    // ========== FITUR PENCARIAN YANG BERFUNGSI ==========
+    function performSearch(query) {
+        const viewer = document.getElementById('viewer');
+        if(!viewer || !currentFileId) {
+            showToast('Buka dokumen terlebih dahulu', true);
+            return;
+        }
+        
+        currentSearchQuery = query.trim().toLowerCase();
+        
+        if(currentSearchQuery.length < 2) {
+            clearAllHighlights();
+            searchMatches = [];
+            document.getElementById('matchStatus').innerText = '0/0';
+            return;
+        }
+        
+        // Bersihkan highlight lama
+        clearAllHighlights();
+        searchMatches = [];
+        
+        if (currentFileType === 'pdf') {
+            searchInPDF();
+        } else {
+            searchInDOCX();
+        }
+    }
+    
+    function clearAllHighlights() {
+        const viewer = document.getElementById('viewer');
+        const marks = viewer.querySelectorAll('mark.search-highlight');
+        marks.forEach(mark => {
+            const parent = mark.parentNode;
+            if (parent) {
+                parent.replaceChild(document.createTextNode(mark.textContent), mark);
+                parent.normalize();
+            }
+        });
+    }
+    
+    function searchInPDF() {
+        const textLayers = document.querySelectorAll('.text-layer');
+        let allMatches = [];
+        
+        textLayers.forEach((layer, layerIdx) => {
+            const textSpans = layer.querySelectorAll('span');
+            textSpans.forEach(span => {
+                const text = span.textContent;
+                if (!text) return;
+                
+                const lowerText = text.toLowerCase();
+                let startIndex = 0;
+                let index;
+                
+                while ((index = lowerText.indexOf(currentSearchQuery, startIndex)) !== -1) {
+                    allMatches.push({
+                        element: span,
+                        startIndex: index,
+                        endIndex: index + currentSearchQuery.length,
+                        text: text,
+                        layerIdx: layerIdx
+                    });
+                    startIndex = index + 1;
+                }
+            });
+        });
+        
+        if (allMatches.length === 0) {
+            document.getElementById('matchStatus').innerText = '0/0';
+            showToast(`"${currentSearchQuery}" tidak ditemukan`);
+            return;
+        }
+        
+        // Highlight semua match
+        allMatches.forEach((match, idx) => {
+            const originalText = match.text;
+            const before = originalText.substring(0, match.startIndex);
+            const matchText = originalText.substring(match.startIndex, match.endIndex);
+            const after = originalText.substring(match.endIndex);
+            
+            const fragment = document.createDocumentFragment();
+            if (before) fragment.appendChild(document.createTextNode(before));
+            
+            const mark = document.createElement('mark');
+            mark.className = 'search-highlight';
+            mark.textContent = matchText;
+            mark.setAttribute('data-match-idx', idx);
+            fragment.appendChild(mark);
+            
+            if (after) fragment.appendChild(document.createTextNode(after));
+            
+            match.element.parentNode.replaceChild(fragment, match.element);
+            
+            // Simpan referensi ke mark
+            const newMark = mark.parentNode?.querySelector(`mark[data-match-idx="${idx}"]`) || mark;
+            searchMatches.push(newMark);
+        });
+        
+        currentMatchIndex = 0;
+        updateMatchStatus();
+        scrollToCurrentMatch();
+    }
+    
+    function searchInDOCX() {
+        const viewer = document.getElementById('viewer');
+        const container = viewer.querySelector('.docx-content');
+        if (!container) return;
+        
+        const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT, {
+            acceptNode: function(node) {
+                if (node.parentElement && node.parentElement.classList && 
+                    node.parentElement.classList.contains('search-highlight')) {
+                    return NodeFilter.FILTER_REJECT;
+                }
+                return NodeFilter.FILTER_ACCEPT;
+            }
+        });
+        
+        const textNodes = [];
+        let node;
+        while (node = walker.nextNode()) {
+            if (node.nodeValue && node.nodeValue.trim().length > 0) {
+                textNodes.push(node);
+            }
+        }
+        
+        textNodes.forEach(textNode => {
+            const text = textNode.nodeValue;
+            const lowerText = text.toLowerCase();
+            let lastIndex = 0;
+            let index;
+            
+            while ((index = lowerText.indexOf(currentSearchQuery, lastIndex)) !== -1) {
+                const span = document.createElement('span');
+                const before = text.substring(lastIndex, index);
+                const matchText = text.substring(index, index + currentSearchQuery.length);
+                const after = text.substring(index + currentSearchQuery.length);
+                
+                if (before) span.appendChild(document.createTextNode(before));
+                
+                const mark = document.createElement('mark');
+                mark.className = 'search-highlight';
+                mark.textContent = matchText;
+                span.appendChild(mark);
+                
+                if (after) {
+                    const remainingSpan = document.createElement('span');
+                    remainingSpan.appendChild(document.createTextNode(after));
+                    span.appendChild(remainingSpan);
+                }
+                
+                textNode.parentNode.replaceChild(span, textNode);
+                searchMatches.push(mark);
+                lastIndex = index + currentSearchQuery.length;
+            }
+        });
+        
+        if (searchMatches.length === 0) {
+            document.getElementById('matchStatus').innerText = '0/0';
+            showToast(`"${currentSearchQuery}" tidak ditemukan`);
+        } else {
+            currentMatchIndex = 0;
+            updateMatchStatus();
+            scrollToCurrentMatch();
+        }
+    }
+    
+    function updateMatchStatus() {
+        const statusSpan = document.getElementById('matchStatus');
+        if (searchMatches.length > 0) {
+            statusSpan.innerText = `${currentMatchIndex + 1}/${searchMatches.length}`;
+            searchMatches.forEach((m, i) => {
+                if (i === currentMatchIndex) {
+                    m.classList.add('active');
+                    m.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                } else {
+                    m.classList.remove('active');
+                }
+            });
+        } else {
+            statusSpan.innerText = '0/0';
+        }
+    }
+    
+    function scrollToCurrentMatch() {
+        if (searchMatches[currentMatchIndex]) {
+            searchMatches[currentMatchIndex].scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+    }
+    
+    function navigateSearch(direction) {
+        if (searchMatches.length === 0) return;
+        currentMatchIndex = (currentMatchIndex + direction + searchMatches.length) % searchMatches.length;
+        updateMatchStatus();
+    }
+    
+    // Debounced search
+    let searchTimeout;
+    document.getElementById('searchInput').addEventListener('input', function(e) {
+        clearTimeout(searchTimeout);
+        searchTimeout = setTimeout(() => {
+            performSearch(e.target.value);
+        }, 300);
+    });
+    
+    // Expose globals
+    window.toggleSidebar = toggleSidebar;
+    window.openFile = openFile;
+    window.deleteFile = deleteFile;
+    window.navigateSearch = navigateSearch;
+    window.performSearch = performSearch;
+    
+    // Initialize
+    loadDatabase();
+    
+    // Register Service Worker
+    if('serviceWorker' in navigator) {
+        navigator.serviceWorker.register('sw.js').catch(err => console.log('SW:', err));
+    }
+</script>
+</body>
+</html>
