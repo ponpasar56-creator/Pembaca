@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
+    <title>DocuMind Vault - HD Reader</title>
+    
+    <link rel="manifest" href="manifest.json">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
+
+    <style>
+        :root { --primary: #1e4a6e; --bg: #f8fafc; }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        /* Layout Rigid: Header tetap di atas */
+        body { 
+            font-family: 'Inter', sans-serif; 
+            background: var(--bg); 
+            height: 100vh; 
+            display: flex; 
+            flex-direction: column; 
+            overflow: hidden; 
+        }
+
+        .app-bar { 
+            flex: 0 0 auto; /* PENTING: Mencegah header menyusut */
+            background: white; 
+            padding: 10px 15px; 
+            display: flex; 
+            align-items: center; 
+            justify-content: space-between; 
+            gap: 10px; 
+            border-bottom: 1px solid #e2e8f0; 
+            z-index: 100;
+        }
+
+        .search-box { flex: 1; display: flex; align-items: center; background: #f1f5f9; padding: 6px 12px; border-radius: 50px; border: 1px solid #cbd5e1; }
+        .search-box input { flex: 1; border: none; background: transparent; outline: none; font-size: 14px; padding: 0 5px; min-width: 0; }
+        
+        /* Highlight untuk File di Sidebar */
+        .file-card.highlight { background: #fef3c7 !important; border: 1px solid #fbbf24 !important; }
+
+        .main-layout { flex: 1; display: flex; overflow: hidden; position: relative; }
+        .sidebar { width: 260px; background: white; border-right: 1px solid #e2e8f0; position: absolute; left: -260px; top: 0; bottom: 0; z-index: 200; transition: 0.3s; display: flex; flex-direction: column; }
+        .sidebar.active { left: 0; }
+        
+        .viewer-container { flex: 1; overflow-y: auto; background: #525659; display: flex; flex-direction: column; align-items: center; padding: 15px; }
+        .page-wrapper { position: relative; background: white; margin-bottom: 20px; box-shadow: 0 4px 15px rgba(0,0,0,0.5); width: 100%; max-width: 800px; min-height: 600px; }
+        
+        .fab { width: 50px; height: 50px; border-radius: 50%; border: none; background: var(--primary); color: white; box-shadow: 0 4px 10px rgba(0,0,0,0.3); margin-top: 10px; cursor: pointer; }
+    </style>
+</head>
+<body>
+
+<header class="app-bar">
+    <div style="width:30px;"><img src="109631.png" style="width:30px; border-radius:6px;"></div>
+    <div class="search-box">
+        <input type="text" id="searchInput" placeholder="Cari kata...">
+        <button id="clearBtn" onclick="clearSearch()" style="display:none; border:none; background:none;"><i class="fas fa-times"></i></button>
+        <span id="matchStatus" style="font-size:12px; color:#64748b; margin:0 5px;">0/0</span>
+        <button onclick="navSearch(-1)" style="border:none; background:none;"><i class="fas fa-chevron-up"></i></button>
+        <button onclick="navSearch(1)" style="border:none; background:none;"><i class="fas fa-chevron-down"></i></button>
+    </div>
+</header>
+
+<div class="main-layout">
+    <aside class="sidebar" id="sidebar">
+        <div style="padding:15px; border-bottom:1px solid #f1f5f9; display:flex; justify-content:space-between;">
+            <strong>Pustaka</strong><button onclick="toggleSidebar()" style="border:none; background:none;"><i class="fas fa-times"></i></button>
+        </div>
+        <div id="fileList" style="padding:10px;"></div>
+    </aside>
+    <main class="viewer-container" id="viewer"></main>
+</div>
+
+<div style="position:fixed; bottom:20px; right:20px; z-index:300;">
+    <button class="fab" onclick="toggleSidebar()"><i class="fas fa-folder"></i></button><br>
+    <button class="fab" onclick="document.getElementById('fileInput').click()"><i class="fas fa-plus"></i></button>
+</div>
+
+<input type="file" id="fileInput" hidden accept=".pdf,.docx">
+
+<script>
+    const pdfjs = window['pdfjs-dist/build/pdf'];
+    pdfjs.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';
+
+    let dbFiles = JSON.parse(localStorage.getItem('docu_vault_v4') || '[]');
+    let searchIndex = [];
+    let currentMatches = [];
+
+    function toggleSidebar() { document.getElementById('sidebar').classList.toggle('active'); }
+
+    // Logic Pencarian & Highlight
+    const searchInput = document.getElementById('searchInput');
+    const clearBtn = document.getElementById('clearBtn');
+
+    searchInput.oninput = function() {
+        const query = this.value.toLowerCase().trim();
+        clearBtn.style.display = query.length > 0 ? 'block' : 'none';
+        
+        // 1. Highlight file di Sidebar
+        const fileCards = document.querySelectorAll('.file-card');
+        fileCards.forEach((card, index) => {
+            const fileName = dbFiles[index].name.toLowerCase();
+            card.classList.toggle('highlight', query.length > 0 && fileName.includes(query));
+        });
+
+        // 2. Pencarian dalam dokumen
+        currentMatches = [];
+        if(query.length < 2) {
+            document.getElementById('matchStatus').innerText = '0/0';
+            return;
+        }
+        searchIndex.forEach(item => { if(item.text.includes(query)) currentMatches.push(item.page); });
+        
+        document.getElementById('matchStatus').innerText = `0/${currentMatches.length}`;
+        if(currentMatches.length > 0) jumpToPage(currentMatches[0]);
+    };
+
+    function clearSearch() {
+        searchInput.value = '';
+        currentMatches = [];
+        document.getElementById('matchStatus').innerText = '0/0';
+        clearBtn.style.display = 'none';
+        document.querySelectorAll('.file-card').forEach(c => c.classList.remove('highlight'));
+        searchInput.focus();
+    }
+
+    // Render Library dengan logika Highlight
+    function renderLibrary() {
+        document.getElementById('fileList').innerHTML = dbFiles.map(f => `
+            <div class="file-card" style="padding:10px; border:1px solid #e2e8f0; margin-bottom:8px; border-radius:8px; cursor:pointer; display:flex; justify-content:space-between;" onclick="displayFile('${f.id}')">
+                <span style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${f.name}</span>
+                <i class="fas fa-trash-alt" style="color:#f87171;" onclick="event.stopPropagation(); deleteFile('${f.id}')"></i>
+            </div>
+        `).join('');
+    }
+
+    // Fungsi lainnya (displayFile, deleteFile, dll tetap sama)
+    // ... (Pastikan fungsi displayFile tetap memproses searchIndex seperti kode sebelumnya) ...
+    
+    renderLibrary();
+</script>
+</body>
+</html>
