@@ -1,0 +1,684 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
+    <title>DocuMind Vault - Smart Document Reader</title>
+    
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#1e4a6e">
+    
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
+    
+    <style>
+        :root { --primary: #1e4a6e; --bg: #f8fafc; }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        body { font-family: 'Inter', sans-serif; background: var(--bg); height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
+
+        .app-bar {
+            background: white; padding: 10px 15px; display: flex; align-items: center; 
+            justify-content: space-between; gap: 10px; z-index: 100; border-bottom: 1px solid #e2e8f0;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+        }
+        
+        .logo-area { display: flex; align-items: center; gap: 8px; }
+        .logo-icon { 
+            width: 32px; height: 32px; background: linear-gradient(135deg, #1e4a6e, #0f2c40); 
+            border-radius: 8px; display: flex; align-items: center; justify-content: center;
+            color: white; font-weight: bold; font-size: 14px;
+        }
+        .logo-text { font-weight: 800; font-size: 1.1rem; color: var(--primary); display: none; }
+        @media (min-width: 480px) { .logo-text { display: block; } }
+
+        .search-box {
+            flex: 1; display: flex; align-items: center; background: #f1f5f9; 
+            padding: 6px 12px; border-radius: 50px; border: 1px solid #cbd5e1;
+            transition: all 0.2s;
+        }
+        .search-box:focus-within { border-color: var(--primary); background: white; }
+        .search-box input { flex: 1; border: none; background: transparent; outline: none; font-size: 14px; }
+
+        .main-layout { flex: 1; display: flex; overflow: hidden; position: relative; }
+
+        .sidebar {
+            width: 280px; background: white; border-right: 1px solid #e2e8f0;
+            display: flex; flex-direction: column; transition: transform 0.25s ease;
+            position: absolute; left: 0; top: 0; bottom: 0; z-index: 200;
+            transform: translateX(-100%);
+            box-shadow: 2px 0 12px rgba(0,0,0,0.1);
+        }
+        .sidebar.active { transform: translateX(0); }
+        .sidebar-header { padding: 16px; border-bottom: 1px solid #f1f5f9; display: flex; justify-content: space-between; align-items: center; background: white; }
+        
+        .file-list { flex: 1; overflow-y: auto; padding: 12px; }
+        .file-card {
+            background: #fff; border: 1px solid #e2e8f0; padding: 10px 12px; border-radius: 12px;
+            margin-bottom: 8px; cursor: pointer; display: flex; justify-content: space-between; align-items: center;
+            transition: all 0.2s;
+        }
+        .file-card:hover { border-color: var(--primary); background: #f9fcff; }
+        .file-card.active { background: #eef4ff; border-color: var(--primary); border-left: 3px solid var(--primary); }
+
+        .viewer-container { 
+            flex: 1; overflow: auto; background: #525659; display: flex; 
+            flex-direction: column; align-items: center; padding: 15px; 
+        }
+        .page-wrapper { 
+            position: relative; background: white; margin-bottom: 16px; 
+            box-shadow: 0 4px 12px rgba(0,0,0,0.3); border-radius: 4px; 
+        }
+        canvas { display: block; max-width: 100%; height: auto; }
+        
+        .text-layer { 
+            position: absolute; top: 0; left: 0; right: 0; bottom: 0;
+            pointer-events: none; 
+            overflow: hidden;
+        }
+        .text-layer span {
+            position: absolute;
+            white-space: pre;
+            pointer-events: none;
+            color: transparent;
+        }
+        
+        mark.search-highlight {
+            background-color: #ffeb3b;
+            color: #000;
+            padding: 0 2px;
+            border-radius: 2px;
+        }
+        mark.search-highlight.active {
+            background-color: #ff9800;
+            color: white;
+        }
+        
+        .docx-content {
+            background: white; padding: 30px; max-width: 800px; width: 100%;
+            border-radius: 12px; margin: 20px; box-shadow: 0 8px 20px rgba(0,0,0,0.2);
+            font-family: 'Inter', sans-serif;
+            line-height: 1.6;
+        }
+
+        .fab-group { position: fixed; bottom: 20px; right: 20px; display: flex; flex-direction: column; gap: 10px; z-index: 300; }
+        .fab { 
+            width: 52px; height: 52px; border-radius: 26px; border: none; color: white; 
+            box-shadow: 0 4px 12px rgba(0,0,0,0.25); display: flex; align-items: center; 
+            justify-content: center; font-size: 20px; cursor: pointer;
+        }
+        .btn-add { background: var(--primary); }
+        .btn-lib { background: #64748b; }
+
+        #loading {
+            position: fixed; inset: 0; background: rgba(0,0,0,0.8); 
+            color: white; display: none; flex-direction: column; 
+            align-items: center; justify-content: center; z-index: 1000;
+        }
+        
+        .toast {
+            position: fixed; bottom: 90px; left: 20px; right: 20px;
+            background: #333; color: white; padding: 12px; border-radius: 12px;
+            text-align: center; z-index: 400; font-size: 13px;
+            display: none;
+        }
+        
+        .progress-bar {
+            width: 80%; max-width: 300px; height: 4px; background: rgba(255,255,255,0.3);
+            border-radius: 2px; margin-top: 15px; overflow: hidden;
+        }
+        .progress-fill {
+            height: 100%; background: #4ade80; width: 0%; transition: width 0.3s;
+        }
+        
+        .empty-state {
+            text-align: center;
+            padding: 40px 20px;
+            color: #94a3b8;
+        }
+        .empty-state i {
+            font-size: 48px;
+            margin-bottom: 15px;
+            opacity: 0.5;
+        }
+    </style>
+</head>
+<body>
+
+<div id="loading">
+    <i class="fas fa-spinner fa-spin fa-2x"></i>
+    <p style="margin-top: 12px;">Memuat dokumen...</p>
+    <div class="progress-bar"><div class="progress-fill" id="progressFill"></div></div>
+</div>
+
+<div id="toast" class="toast"></div>
+
+<header class="app-bar">
+    <div class="logo-area">
+        <div class="logo-icon">DV</div>
+        <div class="logo-text">DocuMind Vault</div>
+    </div>
+    <div class="search-box">
+        <input type="text" id="searchInput" placeholder="Cari kata dalam dokumen...">
+        <span id="matchStatus" style="font-size:11px; background:#e2e8f0; padding:2px 8px; border-radius:20px; margin:0 5px;">0/0</span>
+        <button onclick="navigateSearch(-1)" style="border:none; background:none; padding:0 5px;"><i class="fas fa-chevron-up"></i></button>
+        <button onclick="navigateSearch(1)" style="border:none; background:none; padding:0 5px;"><i class="fas fa-chevron-down"></i></button>
+    </div>
+</header>
+
+<div class="main-layout">
+    <aside class="sidebar" id="sidebar">
+        <div class="sidebar-header">
+            <strong><i class="fas fa-book"></i> Pustaka Saya</strong>
+            <button onclick="toggleSidebar()" style="border:none; background:none; font-size:16px;"><i class="fas fa-times"></i></button>
+        </div>
+        <div class="file-list" id="fileList"></div>
+    </aside>
+
+    <main class="viewer-container" id="viewer">
+        <div style="color: #ccc; text-align: center; margin-top: 100px;">
+            <i class="fas fa-file-alt fa-4x" style="opacity: 0.4;"></i>
+            <p style="margin-top: 15px;">Belum ada dokumen dibuka</p>
+            <p style="font-size: 13px; opacity: 0.7;">Klik + untuk tambah PDF/DOCX</p>
+        </div>
+    </main>
+</div>
+
+<div class="fab-group">
+    <button class="fab btn-lib" onclick="toggleSidebar()"><i class="fas fa-folder"></i></button>
+    <button class="fab btn-add" onclick="document.getElementById('fileInput').click()"><i class="fas fa-plus"></i></button>
+</div>
+
+<input type="file" id="fileInput" hidden accept=".pdf,.docx">
+
+<script>
+    // Konfigurasi PDF.js
+    const pdfjsLib = window['pdfjs-dist/build/pdf'];
+    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';
+    
+    // Data
+    let dbFiles = [];
+    let currentFileId = null;
+    let currentPDFDoc = null;
+    let currentFileType = null;
+    let searchMatches = [];
+    let currentMatchIndex = -1;
+    
+    // Load dari localStorage
+    function loadDatabase() {
+        try {
+            const stored = localStorage.getItem('documind_vault');
+            if(stored) {
+                dbFiles = JSON.parse(stored);
+                console.log('Loaded files:', dbFiles.length);
+            } else {
+                dbFiles = [];
+                console.log('No stored files');
+            }
+        } catch(e) {
+            console.error('Load error:', e);
+            dbFiles = [];
+        }
+        renderLibrary();
+    }
+    
+    function saveDatabase() {
+        try {
+            localStorage.setItem('documind_vault', JSON.stringify(dbFiles));
+            console.log('Saved files:', dbFiles.length);
+            return true;
+        } catch(e) {
+            console.error('Save error:', e);
+            if(e.name === 'QuotaExceededError') {
+                showToast('Penyimpanan penuh! Hapus beberapa file.', true);
+            } else {
+                showToast('Gagal menyimpan: ' + e.message, true);
+            }
+            return false;
+        }
+    }
+    
+    function showToast(msg, isError = false) {
+        const toast = document.getElementById('toast');
+        toast.textContent = msg;
+        toast.style.backgroundColor = isError ? '#dc2626' : '#333';
+        toast.style.display = 'block';
+        setTimeout(() => {
+            toast.style.display = 'none';
+        }, 2500);
+    }
+    
+    function toggleSidebar() {
+        document.getElementById('sidebar').classList.toggle('active');
+    }
+    
+    function formatFileSize(bytes) {
+        if (!bytes) return '0 B';
+        if (bytes < 1024) return bytes + ' B';
+        if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+        return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+    }
+    
+    function renderLibrary() {
+        const list = document.getElementById('fileList');
+        console.log('Rendering library, files count:', dbFiles.length);
+        
+        if(!dbFiles || dbFiles.length === 0) {
+            list.innerHTML = `
+                <div class="empty-state">
+                    <i class="fas fa-folder-open"></i>
+                    <p>Belum ada dokumen</p>
+                    <p style="font-size: 12px; margin-top: 8px;">Tekan tombol + untuk menambah</p>
+                </div>
+            `;
+            return;
+        }
+        
+        list.innerHTML = dbFiles.map(file => `
+            <div class="file-card ${currentFileId === file.id ? 'active' : ''}" onclick="openFile('${file.id}')">
+                <div style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 180px;">
+                    <i class="fas fa-${file.type === 'pdf' ? 'file-pdf' : 'file-word'}" style="color: ${file.type === 'pdf' ? '#dc2626' : '#2563eb'}"></i> 
+                    ${escapeHtml(file.name.length > 30 ? file.name.substring(0,27)+'...' : file.name)}
+                    <span style="font-size: 10px; color: #94a3b8; margin-left: 4px;">${formatFileSize(file.size)}</span>
+                </div>
+                <i class="fas fa-trash-alt" style="color: #ef4444; padding: 5px; cursor: pointer;" onclick="event.stopPropagation(); deleteFile('${file.id}')"></i>
+            </div>
+        `).join('');
+    }
+    
+    function escapeHtml(str) {
+        if(!str) return '';
+        return str.replace(/[&<>]/g, function(m) {
+            if(m === '&') return '&amp;';
+            if(m === '<') return '&lt;';
+            if(m === '>') return '&gt;';
+            return m;
+        });
+    }
+    
+    async function deleteFile(id) {
+        if(confirm('Hapus dokumen ini dari pustaka?')) {
+            const index = dbFiles.findIndex(f => f.id === id);
+            if(index !== -1) {
+                dbFiles.splice(index, 1);
+                saveDatabase();
+                
+                if(currentFileId === id) {
+                    currentFileId = null;
+                    currentPDFDoc = null;
+                    document.getElementById('viewer').innerHTML = `
+                        <div style="color: #ccc; text-align: center; margin-top: 100px;">
+                            <i class="fas fa-file-alt fa-4x" style="opacity: 0.4;"></i>
+                            <p style="margin-top: 15px;">Dokumen dihapus</p>
+                        </div>`;
+                    document.getElementById('searchInput').value = '';
+                    document.getElementById('matchStatus').innerText = '0/0';
+                    searchMatches = [];
+                }
+                renderLibrary();
+                showToast('Dokumen dihapus');
+            }
+        }
+    }
+    
+    // Upload file
+    document.getElementById('fileInput').addEventListener('change', async function(e) {
+        const file = e.target.files[0];
+        if(!file) return;
+        
+        console.log('Uploading file:', file.name, file.size);
+        
+        const ext = file.name.split('.').pop().toLowerCase();
+        if(ext !== 'pdf' && ext !== 'docx') {
+            showToast('Hanya file PDF dan DOCX yang didukung', true);
+            this.value = '';
+            return;
+        }
+        
+        const maxSize = 10 * 1024 * 1024; // 10MB
+        if(file.size > maxSize) {
+            showToast(`Ukuran file maksimal 10MB (${formatFileSize(file.size)})`, true);
+            this.value = '';
+            return;
+        }
+        
+        showToast('Menyimpan dokumen...');
+        
+        try {
+            // Konversi ke base64
+            const base64 = await new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = () => {
+                    const result = reader.result;
+                    const base64String = result.split(',')[1];
+                    resolve(base64String);
+                };
+                reader.onerror = reject;
+                reader.readAsDataURL(file);
+            });
+            
+            const newDoc = {
+                id: Date.now().toString(),
+                name: file.name,
+                data: base64,
+                type: ext,
+                size: file.size,
+                date: new Date().toISOString()
+            };
+            
+            dbFiles.unshift(newDoc);
+            
+            if(saveDatabase()) {
+                renderLibrary();
+                showToast('Dokumen berhasil disimpan');
+                // Buka file yang baru disimpan
+                await openFile(newDoc.id);
+            } else {
+                // Jika gagal, hapus dari array
+                dbFiles.shift();
+            }
+            
+        } catch(err) {
+            console.error('Upload error:', err);
+            showToast('Gagal menyimpan: ' + err.message, true);
+        }
+        
+        this.value = '';
+    });
+    
+    // Open file
+    async function openFile(id) {
+        console.log('Opening file:', id);
+        const file = dbFiles.find(f => f.id === id);
+        if(!file) {
+            console.error('File not found:', id);
+            return;
+        }
+        
+        currentFileId = id;
+        currentFileType = file.type;
+        renderLibrary();
+        
+        const loader = document.getElementById('loading');
+        const progressFill = document.getElementById('progressFill');
+        loader.style.display = 'flex';
+        progressFill.style.width = '0%';
+        
+        if(document.getElementById('sidebar').classList.contains('active')) {
+            toggleSidebar();
+        }
+        
+        const viewer = document.getElementById('viewer');
+        viewer.innerHTML = '';
+        searchMatches = [];
+        document.getElementById('searchInput').value = '';
+        document.getElementById('matchStatus').innerText = '0/0';
+        
+        try {
+            // Decode base64
+            const binaryString = atob(file.data);
+            const bytes = new Uint8Array(binaryString.length);
+            for(let i = 0; i < binaryString.length; i++) {
+                bytes[i] = binaryString.charCodeAt(i);
+            }
+            
+            if(file.type === 'pdf') {
+                await renderPDF(bytes, progressFill);
+            } else if(file.type === 'docx') {
+                await renderDOCX(bytes, progressFill);
+            }
+        } catch(err) {
+            console.error('Open error:', err);
+            viewer.innerHTML = `
+                <div style="background: white; padding: 20px; margin: 20px; border-radius: 12px; color: #dc2626;">
+                    <i class="fas fa-exclamation-triangle"></i> Gagal memuat: ${err.message}
+                </div>`;
+            showToast('Gagal membuka dokumen', true);
+        } finally {
+            loader.style.display = 'none';
+        }
+    }
+    
+    // Render PDF
+    async function renderPDF(bytes, progressFill) {
+        const viewer = document.getElementById('viewer');
+        const loadingTask = pdfjsLib.getDocument({ data: bytes.buffer });
+        currentPDFDoc = await loadingTask.promise;
+        const numPages = currentPDFDoc.numPages;
+        
+        for(let i = 1; i <= numPages; i++) {
+            progressFill.style.width = `${(i / numPages) * 100}%`;
+            
+            const page = await currentPDFDoc.getPage(i);
+            const viewport = page.getViewport({ scale: 1.5 });
+            
+            const wrapper = document.createElement('div');
+            wrapper.className = 'page-wrapper';
+            
+            const canvas = document.createElement('canvas');
+            canvas.width = viewport.width;
+            canvas.height = viewport.height;
+            canvas.style.maxWidth = '100%';
+            canvas.style.height = 'auto';
+            
+            const textLayerDiv = document.createElement('div');
+            textLayerDiv.className = 'text-layer';
+            
+            wrapper.appendChild(canvas);
+            wrapper.appendChild(textLayerDiv);
+            viewer.appendChild(wrapper);
+            
+            await page.render({ canvasContext: canvas.getContext('2d'), viewport }).promise;
+            
+            try {
+                const textContent = await page.getTextContent();
+                await pdfjsLib.renderTextLayer({
+                    textContent: textContent,
+                    container: textLayerDiv,
+                    viewport: viewport,
+                    textDivs: []
+                }).promise;
+            } catch(e) {
+                console.warn('Text layer error:', e);
+            }
+        }
+    }
+    
+    // Render DOCX
+    async function renderDOCX(bytes, progressFill) {
+        progressFill.style.width = '30%';
+        
+        // Load mammoth if needed
+        if(typeof mammoth === 'undefined') {
+            await new Promise((resolve, reject) => {
+                const script = document.createElement('script');
+                script.src = 'https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js';
+                script.onload = resolve;
+                script.onerror = reject;
+                document.head.appendChild(script);
+            });
+        }
+        
+        progressFill.style.width = '60%';
+        
+        const result = await mammoth.convertToHtml({ arrayBuffer: bytes.buffer });
+        const viewer = document.getElementById('viewer');
+        const container = document.createElement('div');
+        container.className = 'docx-content';
+        container.innerHTML = result.value;
+        viewer.appendChild(container);
+        progressFill.style.width = '100%';
+    }
+    
+    // Search functionality
+    function performSearch(query) {
+        const viewer = document.getElementById('viewer');
+        if(!viewer || !currentFileId) return;
+        
+        const searchText = query.trim().toLowerCase();
+        
+        if(searchText.length < 2) {
+            clearHighlights();
+            searchMatches = [];
+            document.getElementById('matchStatus').innerText = '0/0';
+            return;
+        }
+        
+        clearHighlights();
+        searchMatches = [];
+        
+        if(currentFileType === 'pdf') {
+            searchInPDFTextLayer(searchText);
+        } else {
+            searchInDOCXContent(searchText);
+        }
+    }
+    
+    function clearHighlights() {
+        const viewer = document.getElementById('viewer');
+        const marks = viewer.querySelectorAll('mark.search-highlight');
+        marks.forEach(mark => {
+            const parent = mark.parentNode;
+            if(parent) {
+                parent.replaceChild(document.createTextNode(mark.textContent), mark);
+                parent.normalize();
+            }
+        });
+    }
+    
+    function searchInPDFTextLayer(searchText) {
+        const textSpans = document.querySelectorAll('.text-layer span');
+        
+        textSpans.forEach(span => {
+            const text = span.textContent;
+            if(!text) return;
+            
+            const lowerText = text.toLowerCase();
+            let index = lowerText.indexOf(searchText);
+            
+            if(index !== -1) {
+                const before = text.substring(0, index);
+                const matchText = text.substring(index, index + searchText.length);
+                const after = text.substring(index + searchText.length);
+                
+                const fragment = document.createDocumentFragment();
+                if(before) fragment.appendChild(document.createTextNode(before));
+                
+                const mark = document.createElement('mark');
+                mark.className = 'search-highlight';
+                mark.textContent = matchText;
+                fragment.appendChild(mark);
+                searchMatches.push(mark);
+                
+                if(after) fragment.appendChild(document.createTextNode(after));
+                
+                span.parentNode.replaceChild(fragment, span);
+            }
+        });
+        
+        if(searchMatches.length > 0) {
+            currentMatchIndex = 0;
+            updateMatchStatus();
+        } else {
+            document.getElementById('matchStatus').innerText = '0/0';
+            showToast(`"${searchText}" tidak ditemukan`);
+        }
+    }
+    
+    function searchInDOCXContent(searchText) {
+        const viewer = document.getElementById('viewer');
+        const container = viewer.querySelector('.docx-content');
+        if(!container) return;
+        
+        const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT);
+        const textNodes = [];
+        let node;
+        while(node = walker.nextNode()) {
+            if(node.nodeValue && node.nodeValue.trim()) {
+                textNodes.push(node);
+            }
+        }
+        
+        textNodes.forEach(textNode => {
+            const text = textNode.nodeValue;
+            const lowerText = text.toLowerCase();
+            let index = lowerText.indexOf(searchText);
+            
+            if(index !== -1) {
+                const before = text.substring(0, index);
+                const matchText = text.substring(index, index + searchText.length);
+                const after = text.substring(index + searchText.length);
+                
+                const span = document.createElement('span');
+                if(before) span.appendChild(document.createTextNode(before));
+                
+                const mark = document.createElement('mark');
+                mark.className = 'search-highlight';
+                mark.textContent = matchText;
+                span.appendChild(mark);
+                searchMatches.push(mark);
+                
+                if(after) span.appendChild(document.createTextNode(after));
+                
+                textNode.parentNode.replaceChild(span, textNode);
+            }
+        });
+        
+        if(searchMatches.length > 0) {
+            currentMatchIndex = 0;
+            updateMatchStatus();
+        } else {
+            document.getElementById('matchStatus').innerText = '0/0';
+        }
+    }
+    
+    function updateMatchStatus() {
+        const statusSpan = document.getElementById('matchStatus');
+        if(searchMatches.length > 0) {
+            statusSpan.innerText = `${currentMatchIndex + 1}/${searchMatches.length}`;
+            searchMatches.forEach((m, i) => {
+                if(i === currentMatchIndex) {
+                    m.classList.add('active');
+                    m.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                } else {
+                    m.classList.remove('active');
+                }
+            });
+        } else {
+            statusSpan.innerText = '0/0';
+        }
+    }
+    
+    function navigateSearch(direction) {
+        if(searchMatches.length === 0) return;
+        currentMatchIndex = (currentMatchIndex + direction + searchMatches.length) % searchMatches.length;
+        updateMatchStatus();
+    }
+    
+    // Event listeners
+    let searchTimeout;
+    document.getElementById('searchInput').addEventListener('input', function(e) {
+        clearTimeout(searchTimeout);
+        searchTimeout = setTimeout(() => {
+            performSearch(e.target.value);
+        }, 300);
+    });
+    
+    // Expose globals
+    window.toggleSidebar = toggleSidebar;
+    window.openFile = openFile;
+    window.deleteFile = deleteFile;
+    window.navigateSearch = navigateSearch;
+    
+    // Initialize
+    loadDatabase();
+    
+    // Service Worker
+    if('serviceWorker' in navigator) {
+        navigator.serviceWorker.register('sw.js').catch(err => console.log('SW error:', err));
+    }
+</script>
+</body>
+</html>
