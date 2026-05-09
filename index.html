@@ -1,0 +1,877 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>PDF Reader - PT Mitra Setia Budi Sejahtera</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #1a1a2e;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        /* Toolbar */
+        .toolbar {
+            background: #16213e;
+            color: white;
+            padding: 8px 16px;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            align-items: center;
+            border-bottom: 1px solid #0f3460;
+            flex-shrink: 0;
+        }
+
+        .toolbar-group {
+            display: flex;
+            gap: 5px;
+            align-items: center;
+            background: #0f3460;
+            padding: 4px 10px;
+            border-radius: 8px;
+        }
+
+        button {
+            background: #e94560;
+            border: none;
+            color: white;
+            padding: 6px 14px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 13px;
+            transition: all 0.2s;
+        }
+
+        button:hover {
+            background: #c73e56;
+            transform: scale(1.02);
+        }
+
+        button.secondary {
+            background: #533483;
+        }
+
+        button.secondary:hover {
+            background: #6c3bb8;
+        }
+
+        button.danger {
+            background: #e74c3c;
+        }
+
+        .search-box {
+            flex: 1;
+            min-width: 250px;
+            display: flex;
+            gap: 5px;
+        }
+
+        .search-box input {
+            flex: 1;
+            padding: 6px 12px;
+            border: none;
+            border-radius: 5px;
+            font-size: 13px;
+            background: white;
+        }
+
+        .search-box select {
+            padding: 6px;
+            border-radius: 5px;
+            border: none;
+            font-size: 12px;
+        }
+
+        .zoom-info {
+            background: #0f3460;
+            padding: 4px 10px;
+            border-radius: 5px;
+            font-size: 12px;
+            font-weight: bold;
+        }
+
+        .file-info {
+            background: #e94560;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: bold;
+        }
+
+        /* Main container */
+        .main-container {
+            display: flex;
+            flex: 1;
+            overflow: hidden;
+        }
+
+        /* File sidebar - HIDDEN by default, toggle with button */
+        .file-sidebar {
+            width: 0;
+            background: #1a1a2e;
+            border-right: none;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            flex-shrink: 0;
+            transition: width 0.3s ease;
+        }
+
+        .file-sidebar.open {
+            width: 260px;
+            border-right: 1px solid #0f3460;
+        }
+
+        .file-header {
+            padding: 12px;
+            background: #0f3460;
+            font-weight: bold;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            color: white;
+        }
+
+        .file-list {
+            flex: 1;
+            overflow-y: auto;
+            padding: 10px;
+        }
+
+        .file-item {
+            background: #16213e;
+            color: white;
+            padding: 10px;
+            margin-bottom: 8px;
+            border-radius: 8px;
+            cursor: pointer;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            transition: all 0.2s;
+            border: 1px solid #0f3460;
+        }
+
+        .file-item:hover {
+            background: #0f3460;
+            transform: translateX(3px);
+        }
+
+        .file-item.active {
+            background: #e94560;
+            border-color: #e94560;
+        }
+
+        .file-name {
+            font-size: 12px;
+            word-break: break-all;
+            flex: 1;
+        }
+
+        .delete-file {
+            background: #e74c3c;
+            border: none;
+            color: white;
+            padding: 3px 7px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 10px;
+            margin-left: 8px;
+        }
+
+        /* Content area */
+        .content-area {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            background: #525659;
+        }
+
+        .scroll-container {
+            flex: 1;
+            overflow-y: auto;
+            overflow-x: auto;
+            position: relative;
+            background: #3a3d40;
+        }
+
+        .pdf-viewer {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 20px;
+            transform-origin: top center;
+            transition: transform 0.05s linear;
+        }
+
+        .pdf-page-container {
+            position: relative;
+            margin: 16px auto;
+            background: white;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+        }
+
+        .pdf-page-canvas {
+            display: block;
+            width: 100%;
+            height: auto;
+        }
+
+        .text-layer {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            overflow: hidden;
+            opacity: 0.2;
+            line-height: 1;
+            pointer-events: none;
+        }
+
+        .text-layer span {
+            color: transparent;
+            position: absolute;
+            white-space: pre;
+            cursor: text;
+            transform-origin: 0% 0%;
+        }
+
+        /* Highlight styles */
+        .highlight-text {
+            background-color: #ffeb3b;
+            color: transparent !important;
+            border-radius: 2px;
+            pointer-events: none;
+        }
+
+        .highlight-current {
+            background-color: #ff9800 !important;
+            color: transparent !important;
+        }
+
+        .search-match {
+            background-color: #ffeb3b;
+            cursor: pointer;
+            pointer-events: auto;
+        }
+
+        .search-match-current {
+            background-color: #ff9800 !important;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 50px;
+            color: white;
+            font-size: 16px;
+        }
+
+        /* Scrollbar */
+        .scroll-container::-webkit-scrollbar {
+            width: 10px;
+            height: 10px;
+        }
+        .scroll-container::-webkit-scrollbar-track {
+            background: #2a2d30;
+            border-radius: 5px;
+        }
+        .scroll-container::-webkit-scrollbar-thumb {
+            background: #e94560;
+            border-radius: 5px;
+        }
+        .scroll-container::-webkit-scrollbar-thumb:hover {
+            background: #c73e56;
+        }
+
+        /* Toggle sidebar button */
+        .toggle-sidebar {
+            background: #533483;
+            padding: 6px 12px;
+            font-size: 12px;
+        }
+
+        .toggle-sidebar:hover {
+            background: #6c3bb8;
+        }
+
+        @media (max-width: 768px) {
+            .toolbar {
+                padding: 6px 10px;
+            }
+            button {
+                padding: 4px 10px;
+                font-size: 11px;
+            }
+            .search-box {
+                min-width: 180px;
+            }
+            .search-box input {
+                font-size: 11px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="toolbar">
+        <div class="toolbar-group">
+            <button id="uploadBtn" class="secondary">📁 Upload PDF</button>
+            <input type="file" id="fileInput" accept=".pdf" style="display: none;">
+            <button id="toggleSidebarBtn" class="toggle-sidebar">📋 Files</button>
+        </div>
+        <div class="toolbar-group">
+            <button id="zoomOutBtn">−</button>
+            <span class="zoom-info" id="zoomLevel">100%</span>
+            <button id="zoomInBtn">+</button>
+            <button id="resetZoomBtn" class="secondary">⟳</button>
+        </div>
+        <div class="search-box">
+            <input type="text" id="searchInput" placeholder="Cari teks dalam PDF..." autocomplete="off">
+            <select id="searchType">
+                <option value="insensitive">Ignore Case</option>
+                <option value="case">Case Sensitive</option>
+            </select>
+            <button id="searchBtn">🔍</button>
+            <button id="prevBtn" title="Previous">◀</button>
+            <button id="nextBtn" title="Next">▶</button>
+            <span id="searchCounter" style="font-size:11px; background:#0f3460; padding:4px 8px; border-radius:5px;">0/0</span>
+        </div>
+        <div class="file-info" id="currentFileInfo">
+            No file
+        </div>
+    </div>
+
+    <div class="main-container">
+        <div class="file-sidebar" id="fileSidebar">
+            <div class="file-header">
+                <span>📄 Saved Files</span>
+                <button id="clearAllBtn" class="danger" style="padding:3px 8px; font-size:10px;">Clear All</button>
+            </div>
+            <div class="file-list" id="fileList">
+                <div style="color:#888; text-align:center; padding:20px;">No files</div>
+            </div>
+        </div>
+
+        <div class="content-area">
+            <div class="scroll-container" id="scrollContainer">
+                <div class="pdf-viewer" id="pdfViewer">
+                    <div class="loading" id="loadingMsg">
+                        📄 Upload PDF atau klik tombol Files<br>
+                        Support file PDF asli
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Configure PDF.js
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';
+        
+        // Data
+        let files = [];
+        let currentFileId = null;
+        let currentPdfDoc = null;
+        let currentScale = 1.0;
+        let currentMatches = [];
+        let currentMatchIndex = -1;
+        let textLayers = [];
+        let pageTexts = [];
+        
+        // DOM
+        const fileInput = document.getElementById('fileInput');
+        const uploadBtn = document.getElementById('uploadBtn');
+        const toggleSidebarBtn = document.getElementById('toggleSidebarBtn');
+        const fileSidebar = document.getElementById('fileSidebar');
+        const fileListDiv = document.getElementById('fileList');
+        const pdfViewer = document.getElementById('pdfViewer');
+        const scrollContainer = document.getElementById('scrollContainer');
+        const searchInput = document.getElementById('searchInput');
+        const searchBtn = document.getElementById('searchBtn');
+        const prevBtn = document.getElementById('prevBtn');
+        const nextBtn = document.getElementById('nextBtn');
+        const searchCounter = document.getElementById('searchCounter');
+        const zoomInBtn = document.getElementById('zoomInBtn');
+        const zoomOutBtn = document.getElementById('zoomOutBtn');
+        const resetZoomBtn = document.getElementById('resetZoomBtn');
+        const currentFileInfo = document.getElementById('currentFileInfo');
+        const clearAllBtn = document.getElementById('clearAllBtn');
+        const searchType = document.getElementById('searchType');
+
+        // Load saved files
+        function loadFilesFromStorage() {
+            const saved = localStorage.getItem('pdf_reader_files_v2');
+            if (saved) {
+                try {
+                    const parsed = JSON.parse(saved);
+                    files = parsed.map(f => ({
+                        ...f,
+                        data: f.data ? new Uint8Array(f.data).buffer : null
+                    }));
+                } catch(e) { files = []; }
+            }
+            if (!files.length) {
+                files = [];
+            }
+            renderFileList();
+        }
+
+        function saveFilesToStorage() {
+            const toSave = files.map(f => ({
+                id: f.id,
+                name: f.name,
+                data: f.data ? Array.from(new Uint8Array(f.data)) : null,
+                createdAt: f.createdAt
+            }));
+            localStorage.setItem('pdf_reader_files_v2', JSON.stringify(toSave));
+        }
+
+        async function renderFileList() {
+            if (files.length === 0) {
+                fileListDiv.innerHTML = '<div style="color:#888; text-align:center; padding:20px;">No files saved<br>Upload a PDF</div>';
+                return;
+            }
+            
+            fileListDiv.innerHTML = '';
+            for (const file of files) {
+                const div = document.createElement('div');
+                div.className = 'file-item';
+                if (currentFileId === file.id) div.classList.add('active');
+                
+                const nameSpan = document.createElement('span');
+                nameSpan.className = 'file-name';
+                nameSpan.textContent = file.name.length > 28 ? file.name.substring(0, 25) + '...' : file.name;
+                nameSpan.title = file.name;
+                
+                const delBtn = document.createElement('button');
+                delBtn.textContent = '🗑';
+                delBtn.className = 'delete-file';
+                delBtn.onclick = async (e) => {
+                    e.stopPropagation();
+                    await deleteFile(file.id);
+                };
+                
+                div.appendChild(nameSpan);
+                div.appendChild(delBtn);
+                div.onclick = () => loadFile(file.id);
+                fileListDiv.appendChild(div);
+            }
+        }
+
+        async function deleteFile(fileId) {
+            files = files.filter(f => f.id !== fileId);
+            if (currentFileId === fileId) {
+                currentFileId = null;
+                currentPdfDoc = null;
+                pdfViewer.innerHTML = '<div class="loading">Select a file to view</div>';
+                currentFileInfo.textContent = 'No file';
+                currentMatches = [];
+                searchCounter.textContent = '0/0';
+            }
+            saveFilesToStorage();
+            await renderFileList();
+        }
+
+        async function loadFile(fileId) {
+            const file = files.find(f => f.id === fileId);
+            if (!file || !file.data) return;
+            
+            currentFileId = file.id;
+            currentFileInfo.textContent = `📄 ${file.name.length > 30 ? file.name.substring(0,27)+'...' : file.name}`;
+            
+            pdfViewer.innerHTML = '<div class="loading">Loading PDF...</div>';
+            currentMatches = [];
+            searchCounter.textContent = '0/0';
+            searchInput.value = '';
+            
+            try {
+                const typedArray = new Uint8Array(file.data);
+                currentPdfDoc = await pdfjsLib.getDocument({ data: typedArray }).promise;
+                await renderAllPages();
+                await renderFileList();
+            } catch(e) {
+                console.error(e);
+                pdfViewer.innerHTML = `<div class="loading">Error: ${e.message}</div>`;
+            }
+        }
+
+        async function renderAllPages() {
+            if (!currentPdfDoc) return;
+            
+            pdfViewer.innerHTML = '';
+            textLayers = [];
+            pageTexts = [];
+            
+            const numPages = currentPdfDoc.numPages;
+            
+            for (let pageNum = 1; pageNum <= numPages; pageNum++) {
+                const page = await currentPdfDoc.getPage(pageNum);
+                const viewport = page.getViewport({ scale: currentScale });
+                
+                // Container
+                const container = document.createElement('div');
+                container.className = 'pdf-page-container';
+                container.style.width = viewport.width + 'px';
+                container.style.height = viewport.height + 'px';
+                container.setAttribute('data-page-num', pageNum);
+                
+                // Canvas
+                const canvas = document.createElement('canvas');
+                canvas.className = 'pdf-page-canvas';
+                canvas.width = viewport.width;
+                canvas.height = viewport.height;
+                
+                const context = canvas.getContext('2d');
+                await page.render({ canvasContext: context, viewport: viewport }).promise;
+                
+                // Text layer
+                const textLayerDiv = document.createElement('div');
+                textLayerDiv.className = 'text-layer';
+                textLayerDiv.style.width = viewport.width + 'px';
+                textLayerDiv.style.height = viewport.height + 'px';
+                
+                container.appendChild(canvas);
+                container.appendChild(textLayerDiv);
+                pdfViewer.appendChild(container);
+                
+                // Get text content
+                const textContent = await page.getTextContent();
+                const textItems = textContent.items;
+                const pageTextArray = [];
+                
+                // Build text layer spans
+                for (const item of textItems) {
+                    const transform = item.transform;
+                    const x = transform[4];
+                    const y = viewport.height - transform[5];
+                    const fontSize = Math.abs(transform[3]) || 12;
+                    const text = item.str;
+                    
+                    const span = document.createElement('span');
+                    span.textContent = text;
+                    span.style.left = x + 'px';
+                    span.style.top = (y - fontSize) + 'px';
+                    span.style.fontSize = fontSize + 'px';
+                    span.style.fontFamily = item.fontName || 'sans-serif';
+                    span.style.position = 'absolute';
+                    span.style.whiteSpace = 'pre';
+                    span.style.color = 'transparent';
+                    
+                    textLayerDiv.appendChild(span);
+                    pageTextArray.push({
+                        span: span,
+                        text: text,
+                        x: x,
+                        y: y - fontSize,
+                        width: item.width,
+                        height: fontSize,
+                        pageNum: pageNum,
+                        container: container
+                    });
+                }
+                
+                textLayers.push(textLayerDiv);
+                pageTexts.push(pageTextArray);
+            }
+        }
+
+        async function reRenderWithScale() {
+            if (!currentPdfDoc) return;
+            
+            const numPages = currentPdfDoc.numPages;
+            
+            for (let i = 0; i < numPages; i++) {
+                const pageNum = i + 1;
+                const page = await currentPdfDoc.getPage(pageNum);
+                const viewport = page.getViewport({ scale: currentScale });
+                
+                const container = pdfViewer.children[i];
+                if (container) {
+                    container.style.width = viewport.width + 'px';
+                    container.style.height = viewport.height + 'px';
+                    
+                    const canvas = container.querySelector('.pdf-page-canvas');
+                    canvas.width = viewport.width;
+                    canvas.height = viewport.height;
+                    
+                    const context = canvas.getContext('2d');
+                    await page.render({ canvasContext: context, viewport: viewport }).promise;
+                    
+                    // Update text layer positions
+                    const textLayerDiv = container.querySelector('.text-layer');
+                    textLayerDiv.style.width = viewport.width + 'px';
+                    textLayerDiv.style.height = viewport.height + 'px';
+                    
+                    // Update spans positions with new scale
+                    const spans = textLayerDiv.querySelectorAll('span');
+                    const textContent = await page.getTextContent();
+                    const items = textContent.items;
+                    
+                    for (let j = 0; j < spans.length && j < items.length; j++) {
+                        const item = items[j];
+                        const transform = item.transform;
+                        const x = transform[4] * currentScale;
+                        const y = viewport.height - (transform[5] * currentScale);
+                        const fontSize = Math.abs(transform[3] * currentScale) || 12;
+                        
+                        spans[j].style.left = x + 'px';
+                        spans[j].style.top = (y - fontSize) + 'px';
+                        spans[j].style.fontSize = fontSize + 'px';
+                    }
+                    
+                    // Update stored text data
+                    if (pageTexts[i]) {
+                        for (let j = 0; j < pageTexts[i].length && j < items.length; j++) {
+                            pageTexts[i][j].x = items[j].transform[4] * currentScale;
+                            pageTexts[i][j].y = viewport.height - (items[j].transform[5] * currentScale);
+                            pageTexts[i][j].height = Math.abs(items[j].transform[3] * currentScale) || 12;
+                        }
+                    }
+                }
+            }
+            
+            // Re-apply highlights if any
+            if (currentMatches.length > 0) {
+                applyHighlights();
+            }
+        }
+
+        function updateZoomDisplay() {
+            document.getElementById('zoomLevel').textContent = `${Math.round(currentScale * 100)}%`;
+        }
+
+        async function zoomIn() {
+            currentScale = Math.min(currentScale + 0.15, 2.5);
+            updateZoomDisplay();
+            await reRenderWithScale();
+        }
+
+        async function zoomOut() {
+            currentScale = Math.max(currentScale - 0.15, 0.5);
+            updateZoomDisplay();
+            await reRenderWithScale();
+        }
+
+        async function resetZoom() {
+            currentScale = 1.0;
+            updateZoomDisplay();
+            await reRenderWithScale();
+        }
+
+        function clearHighlights() {
+            // Remove highlight classes from spans
+            for (const page of pageTexts) {
+                for (const item of page) {
+                    item.span.classList.remove('search-match', 'search-match-current');
+                }
+            }
+            currentMatches = [];
+            currentMatchIndex = -1;
+            searchCounter.textContent = '0/0';
+        }
+
+        function applyHighlights() {
+            // First clear all highlights
+            for (const page of pageTexts) {
+                for (const item of page) {
+                    item.span.classList.remove('search-match', 'search-match-current');
+                }
+            }
+            
+            // Apply highlights
+            for (let i = 0; i < currentMatches.length; i++) {
+                const match = currentMatches[i];
+                const className = (i === currentMatchIndex) ? 'search-match-current' : 'search-match';
+                match.span.classList.add(className);
+            }
+            
+            searchCounter.textContent = currentMatches.length > 0 ? 
+                `${currentMatchIndex + 1}/${currentMatches.length}` : '0/0';
+        }
+
+        async function performSearch() {
+            clearHighlights();
+            const searchTerm = searchInput.value.trim();
+            if (!searchTerm || !currentPdfDoc) {
+                searchCounter.textContent = '0/0';
+                return;
+            }
+            
+            const caseSensitive = searchType.value === 'case';
+            const searchRegex = caseSensitive ? 
+                new RegExp(searchTerm.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g') :
+                new RegExp(searchTerm.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi');
+            
+            currentMatches = [];
+            
+            // Search through all text items
+            for (const page of pageTexts) {
+                for (const item of page) {
+                    let match;
+                    searchRegex.lastIndex = 0;
+                    while ((match = searchRegex.exec(item.text)) !== null) {
+                        currentMatches.push({
+                            span: item.span,
+                            text: item.text,
+                            startIndex: match.index,
+                            endIndex: match.index + match[0].length,
+                            pageNum: item.pageNum
+                        });
+                    }
+                }
+            }
+            
+            if (currentMatches.length > 0) {
+                currentMatchIndex = 0;
+                applyHighlights();
+                scrollToMatch();
+            } else {
+                searchCounter.textContent = '0/0';
+                alert('Teks tidak ditemukan: "' + searchTerm + '"');
+            }
+        }
+
+        function scrollToMatch() {
+            if (currentMatches[currentMatchIndex]) {
+                const match = currentMatches[currentMatchIndex];
+                const span = match.span;
+                span.scrollIntoView({
+                    behavior: 'smooth',
+                    block: 'center'
+                });
+            }
+        }
+
+        function nextMatch() {
+            if (currentMatches.length === 0) return;
+            currentMatchIndex = (currentMatchIndex + 1) % currentMatches.length;
+            applyHighlights();
+            scrollToMatch();
+        }
+
+        function prevMatch() {
+            if (currentMatches.length === 0) return;
+            currentMatchIndex = (currentMatchIndex - 1 + currentMatches.length) % currentMatches.length;
+            applyHighlights();
+            scrollToMatch();
+        }
+
+        // Upload file
+        async function uploadNewFile() {
+            fileInput.click();
+        }
+
+        async function handleFileUpload(e) {
+            const file = e.target.files[0];
+            if (!file || !file.name.toLowerCase().endsWith('.pdf')) {
+                alert('Silakan upload file PDF');
+                return;
+            }
+            
+            const reader = new FileReader();
+            reader.onload = async function(evt) {
+                const arrayBuffer = evt.target.result;
+                const newFile = {
+                    id: Date.now() + '_' + Math.random(),
+                    name: file.name,
+                    data: arrayBuffer,
+                    createdAt: new Date().toISOString()
+                };
+                files.push(newFile);
+                saveFilesToStorage();
+                await renderFileList();
+                await loadFile(newFile.id);
+            };
+            reader.readAsArrayBuffer(file);
+            fileInput.value = '';
+        }
+
+        async function clearAllFiles() {
+            if (confirm('Hapus semua file? Tindakan ini tidak dapat dibatalkan.')) {
+                files = [];
+                saveFilesToStorage();
+                await renderFileList();
+                currentFileId = null;
+                currentPdfDoc = null;
+                pdfViewer.innerHTML = '<div class="loading">No files. Upload PDF to start.</div>';
+                currentFileInfo.textContent = 'No file';
+                currentMatches = [];
+                searchCounter.textContent = '0/0';
+            }
+        }
+
+        // Toggle sidebar
+        toggleSidebarBtn.addEventListener('click', () => {
+            fileSidebar.classList.toggle('open');
+        });
+
+        // Pinch zoom gesture
+        let initialPinchDistance = 0;
+        let initialPinchScale = 1;
+        
+        pdfViewer.addEventListener('touchstart', (e) => {
+            if (e.touches.length === 2) {
+                const dx = e.touches[0].clientX - e.touches[1].clientX;
+                const dy = e.touches[0].clientY - e.touches[1].clientY;
+                initialPinchDistance = Math.hypot(dx, dy);
+                initialPinchScale = currentScale;
+                e.preventDefault();
+            }
+        });
+        
+        pdfViewer.addEventListener('touchmove', async (e) => {
+            if (e.touches.length === 2 && initialPinchDistance > 0) {
+                const dx = e.touches[0].clientX - e.touches[1].clientX;
+                const dy = e.touches[0].clientY - e.touches[1].clientY;
+                const distance = Math.hypot(dx, dy);
+                const scale = distance / initialPinchDistance;
+                let newScale = initialPinchScale * scale;
+                newScale = Math.min(Math.max(newScale, 0.5), 2.5);
+                if (newScale !== currentScale) {
+                    currentScale = newScale;
+                    updateZoomDisplay();
+                    await reRenderWithScale();
+                }
+                e.preventDefault();
+            }
+        });
+        
+        // Event listeners
+        uploadBtn.addEventListener('click', uploadNewFile);
+        fileInput.addEventListener('change', handleFileUpload);
+        searchBtn.addEventListener('click', performSearch);
+        prevBtn.addEventListener('click', prevMatch);
+        nextBtn.addEventListener('click', nextMatch);
+        zoomInBtn.addEventListener('click', zoomIn);
+        zoomOutBtn.addEventListener('click', zoomOut);
+        resetZoomBtn.addEventListener('click', resetZoom);
+        clearAllBtn.addEventListener('click', clearAllFiles);
+        
+        // Enter key search
+        searchInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') performSearch();
+        });
+        
+        // Initialize
+        loadFilesFromStorage();
+        
+        // Auto-hide sidebar on small screens
+        if (window.innerWidth <= 768) {
+            fileSidebar.classList.remove('open');
+        }
+    </script>
+</body>
+</html>
