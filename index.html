@@ -1,0 +1,616 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
+    <title>DocuMind Vault - HD Reader & Library</title>
+    
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#1e4a6e">
+
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
+
+    <style>
+        :root { --primary: #1e4a6e; --bg: #f8fafc; }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        body { font-family: 'Inter', sans-serif; background: var(--bg); height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
+
+        /* Header */
+        .app-bar {
+            background: white; padding: 10px 15px; display: flex; align-items: center; 
+            justify-content: space-between; gap: 10px; z-index: 100; border-bottom: 1px solid #e2e8f0;
+        }
+        
+        .logo-area { display: flex; align-items: center; gap: 8px; }
+        .logo-icon img { width: 30px; height: 30px; border-radius: 6px; }
+        .logo-text { font-weight: 800; font-size: 1.1rem; color: var(--primary); display: none; }
+        @media (min-width: 480px) { .logo-text { display: block; } }
+
+        .search-box {
+            flex: 1; display: flex; align-items: center; background: #f1f5f9; 
+            padding: 6px 12px; border-radius: 50px; border: 1px solid #cbd5e1;
+        }
+        .search-box input { flex: 1; border: none; background: transparent; outline: none; font-size: 14px; min-width: 50px; }
+
+        /* Main Layout */
+        .main-layout { flex: 1; display: flex; overflow: hidden; position: relative; }
+
+        /* Sidebar Library */
+        .sidebar {
+            width: 260px; background: white; border-right: 1px solid #e2e8f0;
+            display: flex; flex-direction: column; transition: 0.3s;
+            position: absolute; left: -260px; top: 0; bottom: 0; z-index: 200;
+        }
+        .sidebar.active { left: 0; }
+        .sidebar-header { padding: 15px; border-bottom: 1px solid #f1f5f9; display: flex; justify-content: space-between; align-items: center; }
+
+        .file-list { flex: 1; overflow-y: auto; padding: 10px; }
+        .file-card {
+            background: #fff; border: 1px solid #e2e8f0; padding: 10px; border-radius: 12px;
+            margin-bottom: 8px; cursor: pointer; display: flex; justify-content: space-between; align-items: center;
+        }
+        .file-card:hover { border-color: var(--primary); }
+        .file-card.active { background: #eff6ff; border-color: var(--primary); }
+
+        /* ========== VIEWER DENGAN ZOOM DAN CUSTOM SCROLL ========== */
+        .viewer-wrapper {
+            flex: 1;
+            position: relative;
+            overflow: hidden;
+            background: #525659;
+        }
+        
+        /* Kontainer yang bisa di-scroll dan menampung konten yang di-zoom */
+        .zoom-container {
+            width: 100%;
+            height: 100%;
+            overflow: auto;
+            position: relative;
+            scroll-behavior: smooth;
+        }
+        
+        /* Custom scrollbar styling (samping kanan & bawah) */
+        .zoom-container::-webkit-scrollbar {
+            width: 10px;
+            height: 10px;
+        }
+        .zoom-container::-webkit-scrollbar-track {
+            background: #2d2f33;
+            border-radius: 10px;
+        }
+        .zoom-container::-webkit-scrollbar-thumb {
+            background: #888;
+            border-radius: 10px;
+        }
+        .zoom-container::-webkit-scrollbar-thumb:hover {
+            background: #aaa;
+        }
+        
+        /* Area konten yang di-scale menggunakan transform */
+        .zoomed-content {
+            transform-origin: 0 0;
+            transition: transform 0.05s linear; /* smooth transisi zoom */
+            will-change: transform;
+            width: fit-content;
+            min-width: 100%;
+        }
+        
+        /* Gaya untuk menampung halaman PDF/DOCX */
+        .viewer-content {
+            background: #525659;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 20px;
+        }
+        
+        .page-wrapper {
+            position: relative;
+            background: white;
+            margin-bottom: 20px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+        }
+        canvas {
+            display: block;
+            max-width: 100%;
+            height: auto;
+        }
+        
+        /* Text Layer untuk pencarian */
+        .text-layer {
+            position: absolute;
+            inset: 0;
+            pointer-events: none;
+            opacity: 0.2;
+            overflow: hidden;
+        }
+        .text-layer span {
+            position: absolute;
+            color: transparent;
+            white-space: pre;
+            transform-origin: 0% 0%;
+        }
+        
+        mark.highlight {
+            background: #ffeb3b;
+            color: black;
+            border-radius: 2px;
+        }
+        mark.highlight.active {
+            background: #f57c00;
+            color: white;
+            scale: 1.1;
+        }
+        
+        /* Floating Buttons */
+        .fab-group {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            z-index: 300;
+        }
+        .fab {
+            width: 50px;
+            height: 50px;
+            border-radius: 50%;
+            border: none;
+            color: white;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.3);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 20px;
+            cursor: pointer;
+        }
+        .btn-add { background: var(--primary); }
+        .btn-lib { background: #64748b; }
+        
+        /* Reset button untuk zoom */
+        .btn-zoom-reset {
+            background: #334155;
+            margin-bottom: 5px;
+        }
+        
+        #loading {
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.7);
+            color: white;
+            display: none;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+        }
+        
+        /* Mode responsif untuk dokumen Word */
+        .docx-content {
+            background: white;
+            padding: 30px;
+            width: 100%;
+            max-width: 900px;
+            border-radius: 10px;
+            margin: 20px auto;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.3);
+        }
+        
+        @media (max-width: 640px) {
+            .zoom-container::-webkit-scrollbar {
+                width: 6px;
+                height: 6px;
+            }
+        }
+    </style>
+</head>
+<body>
+
+<div id="loading"><i class="fas fa-spinner fa-spin fa-2x"></i><p style="margin-top:10px">Menajamkan Teks...</p></div>
+
+<header class="app-bar">
+    <div class="logo-area">
+        <div class="logo-icon"><img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' fill='%231e4a6e'/%3E%3Ctext x='50%25' y='50%25' dominant-baseline='middle' text-anchor='middle' fill='white' font-size='50' font-weight='bold'%3EDV%3C/text%3E%3C/svg%3E" alt="Logo"></div>
+        <div class="logo-text">DocuMind Vault</div>
+    </div>
+    <div class="search-box">
+        <input type="text" id="searchInput" placeholder="Cari kata...">
+        <span id="matchStatus" style="font-size:11px; font-weight:700; margin: 0 5px;">0/0</span>
+        <button onclick="navSearch(-1)" style="border:none; background:none;"><i class="fas fa-chevron-up"></i></button>
+        <button onclick="navSearch(1)" style="border:none; background:none;"><i class="fas fa-chevron-down"></i></button>
+    </div>
+</header>
+
+<div class="main-layout">
+    <aside class="sidebar" id="sidebar">
+        <div class="sidebar-header">
+            <strong>Pustaka Saya</strong>
+            <button onclick="toggleSidebar()" style="border:none; background:none;"><i class="fas fa-times"></i></button>
+        </div>
+        <div class="file-list" id="fileList"></div>
+    </aside>
+
+    <!-- Wrapper baru untuk zoom & scroll kustom -->
+    <div class="viewer-wrapper">
+        <div class="zoom-container" id="zoomContainer">
+            <div class="zoomed-content" id="zoomedContent">
+                <div id="viewer" class="viewer-content">
+                    <div style="color:white; opacity:0.3; text-align:center; margin-top:100px;">
+                        <i class="fas fa-file-pdf fa-4x"></i>
+                        <p style="margin-top:10px">Belum ada dokumen dibuka</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="fab-group">
+    <button class="fab btn-zoom-reset" onclick="resetZoom()" title="Atur ulang zoom"><i class="fas fa-search-minus"></i></button>
+    <button class="fab btn-lib" onclick="toggleSidebar()"><i class="fas fa-folder"></i></button>
+    <button class="fab btn-add" onclick="document.getElementById('fileInput').click()"><i class="fas fa-plus"></i></button>
+</div>
+
+<input type="file" id="fileInput" hidden accept=".pdf,.docx">
+
+<script>
+    const pdfjs = window['pdfjs-dist/build/pdf'];
+    pdfjs.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';
+
+    let dbFiles = JSON.parse(localStorage.getItem('docu_vault_v4') || '[]');
+    let matches = [];
+    let currentMatchIdx = -1;
+    
+    // === Variabel untuk zoom dan gesture ===
+    let currentZoom = 1.0;
+    const MIN_ZOOM = 0.5;
+    const MAX_ZOOM = 4.0;
+    let zoomedContentDiv = document.getElementById('zoomedContent');
+    let zoomContainer = document.getElementById('zoomContainer');
+    let currentDocId = null;
+    
+    // Fungsi untuk mengupdate zoom
+    function applyZoom() {
+        if (!zoomedContentDiv) return;
+        zoomedContentDiv.style.transform = `scale(${currentZoom})`;
+        // Lebar konten akan otomatis menyesuaikan, scroll tetap berfungsi
+        // Trigger resize agar scrollbar menyesuaikan area
+        setTimeout(() => {
+            if (zoomContainer) {
+                // Memastikan scrollbar tetap smooth
+                zoomContainer.dispatchEvent(new Event('scroll'));
+            }
+        }, 10);
+    }
+    
+    function zoomIn() {
+        let newZoom = Math.min(MAX_ZOOM, currentZoom + 0.2);
+        if (newZoom !== currentZoom) {
+            currentZoom = newZoom;
+            applyZoom();
+        }
+    }
+    
+    function zoomOut() {
+        let newZoom = Math.max(MIN_ZOOM, currentZoom - 0.2);
+        if (newZoom !== currentZoom) {
+            currentZoom = newZoom;
+            applyZoom();
+        }
+    }
+    
+    function resetZoom() {
+        currentZoom = 1.0;
+        applyZoom();
+        // Reset posisi scroll ke atas kiri setelah zoom reset (opsional)
+        if (zoomContainer) {
+            zoomContainer.scrollTo({ left: 0, top: 0, behavior: 'smooth' });
+        }
+    }
+    
+    // === Implementasi Pinch-to-Zoom (2 jari) yang halus ===
+    let initialDistance = 0;
+    let initialZoom = 1.0;
+    let isPinching = false;
+    
+    function getDistance(touches) {
+        if (touches.length < 2) return 0;
+        const dx = touches[0].clientX - touches[1].clientX;
+        const dy = touches[0].clientY - touches[1].clientY;
+        return Math.hypot(dx, dy);
+    }
+    
+    function onTouchStart(e) {
+        if (e.touches.length === 2) {
+            e.preventDefault(); // Mencegah zoom default browser agar lebih smooth
+            initialDistance = getDistance(e.touches);
+            initialZoom = currentZoom;
+            isPinching = true;
+        }
+    }
+    
+    function onTouchMove(e) {
+        if (isPinching && e.touches.length === 2) {
+            e.preventDefault();
+            const newDistance = getDistance(e.touches);
+            if (initialDistance > 0) {
+                let ratio = newDistance / initialDistance;
+                let newZoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, initialZoom * ratio));
+                if (newZoom !== currentZoom) {
+                    currentZoom = newZoom;
+                    applyZoom();
+                }
+            }
+        }
+    }
+    
+    function onTouchEnd(e) {
+        isPinching = false;
+        initialDistance = 0;
+    }
+    
+    // Tambahkan gesture listener ke zoom container
+    if (zoomContainer) {
+        zoomContainer.addEventListener('touchstart', onTouchStart, { passive: false });
+        zoomContainer.addEventListener('touchmove', onTouchMove, { passive: false });
+        zoomContainer.addEventListener('touchend', onTouchEnd);
+    }
+    
+    // Optional: support wheel zoom (Ctrl + Scroll)
+    function onWheelZoom(e) {
+        if (e.ctrlKey) {
+            e.preventDefault();
+            const delta = -e.deltaY * 0.01;
+            let newZoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, currentZoom + delta));
+            if (newZoom !== currentZoom) {
+                currentZoom = newZoom;
+                applyZoom();
+            }
+        }
+    }
+    
+    if (zoomContainer) {
+        zoomContainer.addEventListener('wheel', onWheelZoom, { passive: false });
+    }
+    
+    // ===== Fungsi sidebar & data =====
+    function toggleSidebar() { 
+        document.getElementById('sidebar').classList.toggle('active'); 
+    }
+    
+    // Simpan File ke LocalStorage
+    document.getElementById('fileInput').onchange = function(e) {
+        const file = e.target.files[0];
+        if(!file) return;
+        
+        const reader = new FileReader();
+        reader.onload = function() {
+            const base64 = btoa(new Uint8Array(this.result).reduce((s, b) => s + String.fromCharCode(b), ''));
+            const newDoc = { id: Date.now().toString(), name: file.name, data: base64, type: file.name.split('.').pop() };
+            dbFiles.unshift(newDoc);
+            localStorage.setItem('docu_vault_v4', JSON.stringify(dbFiles));
+            renderLibrary();
+            displayFile(newDoc.id);
+        };
+        reader.readAsArrayBuffer(file);
+    };
+    
+    function renderLibrary() {
+        const list = document.getElementById('fileList');
+        list.innerHTML = dbFiles.map(f => `
+            <div class="file-card" onclick="displayFile('${f.id}')">
+                <div style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:180px; font-size:13px;">
+                    <i class="fas fa-file-alt"></i> ${escapeHtml(f.name)}
+                </div>
+                <i class="fas fa-trash-alt" style="color:#f87171; padding:5px;" onclick="event.stopPropagation(); deleteFile('${f.id}')"></i>
+            </div>
+        `).join('');
+    }
+    
+    function escapeHtml(str) {
+        if(!str) return '';
+        return str.replace(/[&<>]/g, function(m) {
+            if(m === '&') return '&amp;';
+            if(m === '<') return '&lt;';
+            if(m === '>') return '&gt;';
+            return m;
+        });
+    }
+    
+    function deleteFile(id) {
+        dbFiles = dbFiles.filter(f => f.id !== id);
+        localStorage.setItem('docu_vault_v4', JSON.stringify(dbFiles));
+        renderLibrary();
+        if(currentDocId === id) {
+            document.getElementById('viewer').innerHTML = `<div style="color:white; opacity:0.3; text-align:center; margin-top:100px;">
+                <i class="fas fa-file-pdf fa-4x"></i>
+                <p style="margin-top:10px">Dokumen telah dihapus</p>
+            </div>`;
+            currentDocId = null;
+        }
+    }
+    
+    async function displayFile(id) {
+        const file = dbFiles.find(f => f.id === id);
+        if(!file) return;
+        currentDocId = id;
+        
+        // Reset zoom ke 1.0 sebelum menampilkan dokumen baru
+        currentZoom = 1.0;
+        applyZoom();
+        if(zoomContainer) zoomContainer.scrollTo({ left: 0, top: 0, behavior: 'auto' });
+        
+        const loader = document.getElementById('loading');
+        const viewerDiv = document.getElementById('viewer');
+        loader.style.display = 'flex';
+        viewerDiv.innerHTML = '';
+        if(document.getElementById('sidebar').classList.contains('active')) toggleSidebar();
+        
+        const bytes = new Uint8Array(atob(file.data).split("").map(c => c.charCodeAt(0)));
+        
+        try {
+            if(file.type && file.type.toLowerCase() === 'pdf') {
+                const pdf = await pdfjs.getDocument({data: bytes.buffer}).promise;
+                for(let i=1; i<=pdf.numPages; i++) {
+                    const page = await pdf.getPage(i);
+                    // Skala default 1.5 agar HD namun tidak terlalu besar, tetap nyaman di zoom
+                    const scale = 1.5;
+                    const viewport = page.getViewport({scale: scale});
+                    
+                    const wrapper = document.createElement('div');
+                    wrapper.className = 'page-wrapper';
+                    
+                    const canvas = document.createElement('canvas');
+                    canvas.height = viewport.height;
+                    canvas.width = viewport.width;
+                    
+                    const textLayer = document.createElement('div');
+                    textLayer.className = 'text-layer';
+                    
+                    wrapper.appendChild(canvas);
+                    wrapper.appendChild(textLayer);
+                    viewerDiv.appendChild(wrapper);
+                    
+                    await page.render({canvasContext: canvas.getContext('2d'), viewport}).promise;
+                    const textContent = await page.getTextContent();
+                    // Render text layer untuk pencarian di PDF
+                    await pdfjs.renderTextLayer({
+                        textContent: textContent,
+                        container: textLayer,
+                        viewport: viewport,
+                        textDivs: []
+                    }).promise;
+                }
+            } else {
+                // DOCX
+                const result = await mammoth.convertToHtml({arrayBuffer: bytes.buffer});
+                const docxContainer = document.createElement('div');
+                docxContainer.className = 'docx-content';
+                docxContainer.innerHTML = result.value;
+                viewerDiv.appendChild(docxContainer);
+            }
+            loader.style.display = 'none';
+            
+            // Setelah render selesai, reset pencarian dan highlight
+            clearHighlightsAndSearch();
+            // Pastikan scroll container tetap smooth setelah konten dimuat
+            if(zoomContainer) zoomContainer.dispatchEvent(new Event('scroll'));
+            
+        } catch(e) {
+            loader.style.display = 'none';
+            alert("Gagal memuat: " + e.message);
+            viewerDiv.innerHTML = `<div style="color:white; background:#b91c1c; padding:20px; border-radius:10px; margin:20px;">Error: ${e.message}</div>`;
+        }
+    }
+    
+    function clearHighlightsAndSearch() {
+        // Hapus semua highlight
+        document.querySelectorAll('mark.highlight').forEach(m => m.replaceWith(m.textContent));
+        matches = [];
+        currentMatchIdx = -1;
+        document.getElementById('matchStatus').innerText = '0/0';
+        document.getElementById('searchInput').value = '';
+    }
+    
+    // === Fitur Pencarian Akurat dengan cakupan DOM yang sudah di-render ===
+    document.getElementById('searchInput').oninput = function() {
+        const query = this.value.toLowerCase().trim();
+        // Bersihkan highlight lama
+        document.querySelectorAll('mark.highlight').forEach(m => m.replaceWith(m.textContent));
+        matches = [];
+        
+        if(query.length < 2) {
+            document.getElementById('matchStatus').innerText = '0/0';
+            return;
+        }
+        
+        const viewerArea = document.getElementById('viewer');
+        // Tree walker untuk mencari teks pada node teks (bisa dari PDF text layer atau docx)
+        const walker = document.createTreeWalker(viewerArea, NodeFilter.SHOW_TEXT, {
+            acceptNode: function(node) {
+                // Skip teks yang sudah berada di dalam mark atau script/style
+                if(node.parentElement && (node.parentElement.tagName === 'MARK' || node.parentElement.tagName === 'SCRIPT' || node.parentElement.tagName === 'STYLE')) {
+                    return NodeFilter.FILTER_REJECT;
+                }
+                return NodeFilter.FILTER_ACCEPT;
+            }
+        });
+        
+        let textNodes = [];
+        let node;
+        while(node = walker.nextNode()) {
+            if(node.nodeValue && node.nodeValue.trim().length > 0) {
+                textNodes.push(node);
+            }
+        }
+        
+        // Proses setiap teks node
+        textNodes.forEach(textNode => {
+            const content = textNode.nodeValue;
+            if(content.toLowerCase().includes(query)) {
+                const span = document.createElement('span');
+                const regex = new RegExp(`(${query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi');
+                const parts = content.split(regex);
+                parts.forEach(part => {
+                    if(part && part.toLowerCase() === query.toLowerCase()) {
+                        const mark = document.createElement('mark');
+                        mark.className = 'highlight';
+                        mark.textContent = part;
+                        matches.push(mark);
+                        span.appendChild(mark);
+                    } else if(part) {
+                        span.appendChild(document.createTextNode(part));
+                    }
+                });
+                textNode.parentNode.replaceChild(span, textNode);
+            }
+        });
+        
+        if(matches.length > 0) {
+            currentMatchIdx = 0;
+            updateSearch();
+        } else {
+            currentMatchIdx = -1;
+            document.getElementById('matchStatus').innerText = '0/0';
+        }
+    };
+    
+    function updateSearch() {
+        document.getElementById('matchStatus').innerText = matches.length > 0 ? `${currentMatchIdx+1}/${matches.length}` : '0/0';
+        matches.forEach((m, i) => {
+            if(i === currentMatchIdx) {
+                m.classList.add('active');
+                m.scrollIntoView({behavior: 'smooth', block: 'center'});
+            } else {
+                m.classList.remove('active');
+            }
+        });
+    }
+    
+    function navSearch(dir) {
+        if(!matches.length) return;
+        currentMatchIdx = (currentMatchIdx + dir + matches.length) % matches.length;
+        updateSearch();
+    }
+    
+    // Inisialisasi library
+    renderLibrary();
+    
+    // Tambahkan tombol zoom in/out secara opsional lewat gesture saja, tapi beri tombol reset di FAB
+    // Kita juga bisa menambahkan gesture deteksi pada area viewer dengan mudah
+    // Agar pinch gesture lebih optimal, pastikan preventDefault pada container.
+    
+    // Untuk memastikan smooth scroll tetap berfungsi dan zoom container tidak mengganggu interaksi teks
+    // Set style overflow auto pada .zoom-container sudah ada.
+    
+    // Optional: Jika dokumen kosong dan reset zoom disediakan user.
+    console.log("DocuMind Vault siap dengan pinch-zoom dan custom scroll");
+</script>
+</body>
+</html>
