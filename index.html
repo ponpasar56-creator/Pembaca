@@ -1,0 +1,608 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
+    <title>DocuMind Vault - PDF Reader Pro</title>
+    
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#1e4a6e">
+
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+
+    <style>
+        :root { --primary: #1e4a6e; --bg: #f8fafc; }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        body { font-family: 'Inter', sans-serif; background: var(--bg); height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
+
+        .app-bar {
+            background: white; padding: 8px 15px; display: flex; align-items: center; 
+            justify-content: space-between; gap: 10px; z-index: 100; border-bottom: 1px solid #e2e8f0;
+        }
+        
+        .logo-area { display: flex; align-items: center; gap: 8px; }
+        .logo-icon img { width: 28px; height: 28px; border-radius: 6px; }
+        .logo-text { font-weight: 800; font-size: 1rem; color: var(--primary); display: none; }
+        @media (min-width: 480px) { .logo-text { display: block; } }
+
+        .info-status {
+            background: #e2e8f0;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 600;
+            color: #1e293b;
+            max-width: 200px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .main-layout { flex: 1; display: flex; overflow: hidden; position: relative; }
+
+        .sidebar {
+            width: 280px; background: white; border-right: 1px solid #e2e8f0;
+            display: flex; flex-direction: column; transition: 0.3s ease;
+            position: absolute; left: -280px; top: 0; bottom: 0; z-index: 200;
+            box-shadow: 2px 0 12px rgba(0,0,0,0.1);
+        }
+        .sidebar.active { left: 0; }
+        .sidebar-header { padding: 15px; border-bottom: 1px solid #f1f5f9; display: flex; justify-content: space-between; align-items: center; }
+
+        .file-list { flex: 1; overflow-y: auto; padding: 10px; }
+        
+        .file-list::-webkit-scrollbar { width: 8px; }
+        .file-list::-webkit-scrollbar-track { background: #e2e8f0; border-radius: 10px; }
+        .file-list::-webkit-scrollbar-thumb { background: #94a3b8; border-radius: 10px; }
+        
+        .file-card {
+            background: #fff; border: 1px solid #e2e8f0; padding: 10px; border-radius: 12px;
+            margin-bottom: 8px; cursor: pointer; display: flex; justify-content: space-between; align-items: center;
+            transition: all 0.2s;
+        }
+        .file-card:hover { border-color: var(--primary); background: #f8fafc; }
+        .file-card.active { background: #eff6ff; border-color: var(--primary); }
+        
+        .file-size {
+            font-size: 10px;
+            color: #64748b;
+            margin-left: 6px;
+        }
+
+        .viewer-wrapper {
+            flex: 1;
+            position: relative;
+            background: #525659;
+        }
+        
+        .pdf-viewer {
+            width: 100%;
+            height: 100%;
+            border: none;
+            background: #525659;
+        }
+        
+        .empty-state {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100%;
+            color: #cbd5e1;
+            text-align: center;
+            padding: 20px;
+        }
+        
+        .empty-state i { font-size: 64px; margin-bottom: 20px; opacity: 0.5; }
+        .empty-state p { font-size: 16px; margin-bottom: 8px; }
+        .empty-state small { font-size: 13px; opacity: 0.7; }
+
+        .fab-group {
+            position: fixed;
+            bottom: 24px;
+            right: 24px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            z-index: 300;
+        }
+        .fab {
+            width: 52px;
+            height: 52px;
+            border-radius: 50%;
+            border: none;
+            color: white;
+            box-shadow: 0 6px 14px rgba(0,0,0,0.3);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 22px;
+            cursor: pointer;
+            transition: transform 0.1s, background 0.2s;
+        }
+        .fab:active { transform: scale(0.95); }
+        .btn-add { background: var(--primary); }
+        .btn-lib { background: #475569; }
+        
+        #loading {
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.9);
+            color: white;
+            display: none;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+        }
+        
+        .spinner {
+            width: 48px;
+            height: 48px;
+            border: 4px solid #334155;
+            border-top-color: #3b82f6;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+        
+        .progress-bar {
+            width: 250px;
+            height: 6px;
+            background: #334155;
+            border-radius: 10px;
+            margin-top: 20px;
+            overflow: hidden;
+        }
+        
+        .progress-fill {
+            height: 100%;
+            background: #3b82f6;
+            width: 0%;
+            transition: width 0.3s;
+            border-radius: 10px;
+        }
+        
+        @keyframes spin { to { transform: rotate(360deg); } }
+        
+        @media (max-width: 640px) {
+            .fab-group { bottom: 16px; right: 16px; gap: 10px; }
+            .fab { width: 48px; height: 48px; font-size: 20px; }
+        }
+    </style>
+</head>
+<body>
+
+<div id="loading">
+    <div class="spinner"></div>
+    <p style="margin-top:16px; font-weight:500;" id="loadingText">Memuat dokumen...</p>
+    <div class="progress-bar" id="progressBar" style="display: none;">
+        <div class="progress-fill" id="progressFill"></div>
+    </div>
+</div>
+
+<header class="app-bar">
+    <div class="logo-area">
+        <div class="logo-icon"><img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' fill='%231e4a6e'/%3E%3Ctext x='50%25' y='50%25' dominant-baseline='middle' text-anchor='middle' fill='white' font-size='48' font-weight='bold'%3EDV%3C/text%3E%3C/svg%3E" alt="Logo"></div>
+        <div class="logo-text">DocuMind Vault</div>
+    </div>
+    <div class="info-status" id="pageInfo">
+        <i class="fas fa-database"></i> IndexedDB
+    </div>
+</header>
+
+<div class="main-layout">
+    <aside class="sidebar" id="sidebar">
+        <div class="sidebar-header">
+            <strong><i class="fas fa-book-open"></i> Pustaka Saya</strong>
+            <button onclick="toggleSidebar()" style="border:none; background:none; font-size:18px; cursor:pointer;"><i class="fas fa-times"></i></button>
+        </div>
+        <div class="file-list" id="fileList"></div>
+        <div style="padding: 12px; border-top: 1px solid #e2e8f0; font-size: 11px; color: #64748b; text-align: center;">
+            <i class="fas fa-hdd"></i> Penyimpanan IndexedDB (besar)
+        </div>
+    </aside>
+
+    <div class="viewer-wrapper" id="viewerWrapper">
+        <embed id="pdfViewer" class="pdf-viewer" type="application/pdf" style="display: none;">
+        <div class="empty-state" id="emptyState">
+            <i class="fas fa-file-pdf"></i>
+            <p>Belum ada dokumen dibuka</p>
+            <small>Tap tombol + untuk tambah file PDF</small>
+        </div>
+    </div>
+</div>
+
+<div class="fab-group">
+    <button class="fab btn-lib" onclick="toggleSidebar()"><i class="fas fa-folder"></i></button>
+    <button class="fab btn-add" onclick="document.getElementById('fileInput').click()"><i class="fas fa-plus"></i></button>
+</div>
+
+<input type="file" id="fileInput" hidden accept=".pdf">
+
+<script>
+    // ==================== INDEXEDDB SETUP ====================
+    const DB_NAME = 'DocuMindDB';
+    const DB_VERSION = 1;
+    const STORE_NAME = 'pdf_files';
+    
+    let db = null;
+    let currentDocId = null;
+    
+    // Buka koneksi IndexedDB
+    function openDatabase() {
+        return new Promise((resolve, reject) => {
+            const request = indexedDB.open(DB_NAME, DB_VERSION);
+            
+            request.onerror = () => reject(request.error);
+            request.onsuccess = () => {
+                db = request.result;
+                resolve(db);
+            };
+            
+            request.onupgradeneeded = (event) => {
+                const database = event.target.result;
+                if (!database.objectStoreNames.contains(STORE_NAME)) {
+                    const store = database.createObjectStore(STORE_NAME, { keyPath: 'id' });
+                    store.createIndex('name', 'name', { unique: false });
+                    store.createIndex('added', 'added', { unique: false });
+                }
+            };
+        });
+    }
+    
+    // Simpan file ke IndexedDB
+    async function saveFileToDB(file, fileData) {
+        return new Promise((resolve, reject) => {
+            const transaction = db.transaction([STORE_NAME], 'readwrite');
+            const store = transaction.objectStore(STORE_NAME);
+            
+            const doc = {
+                id: Date.now().toString(),
+                name: file.name,
+                data: fileData, // ArrayBuffer
+                type: 'pdf',
+                size: file.size,
+                added: Date.now()
+            };
+            
+            const request = store.add(doc);
+            request.onsuccess = () => resolve(doc);
+            request.onerror = () => reject(request.error);
+        });
+    }
+    
+    // Ambil semua file dari IndexedDB
+    async function getAllFiles() {
+        return new Promise((resolve, reject) => {
+            const transaction = db.transaction([STORE_NAME], 'readonly');
+            const store = transaction.objectStore(STORE_NAME);
+            const request = store.getAll();
+            
+            request.onsuccess = () => resolve(request.result || []);
+            request.onerror = () => reject(request.error);
+        });
+    }
+    
+    // Ambil satu file berdasarkan ID
+    async function getFileById(id) {
+        return new Promise((resolve, reject) => {
+            const transaction = db.transaction([STORE_NAME], 'readonly');
+            const store = transaction.objectStore(STORE_NAME);
+            const request = store.get(id);
+            
+            request.onsuccess = () => resolve(request.result);
+            request.onerror = () => reject(request.error);
+        });
+    }
+    
+    // Hapus file dari IndexedDB
+    async function deleteFileFromDB(id) {
+        return new Promise((resolve, reject) => {
+            const transaction = db.transaction([STORE_NAME], 'readwrite');
+            const store = transaction.objectStore(STORE_NAME);
+            const request = store.delete(id);
+            
+            request.onsuccess = () => resolve();
+            request.onerror = () => reject(request.error);
+        });
+    }
+    
+    // Format ukuran file
+    function formatFileSize(bytes) {
+        if (!bytes) return '0 KB';
+        if (bytes < 1024) return bytes + ' B';
+        if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+        return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+    }
+    
+    // ==================== UTILITIES ====================
+    function toggleSidebar() { 
+        document.getElementById('sidebar').classList.toggle('active'); 
+    }
+    
+    function escapeHtml(str) {
+        if(!str) return '';
+        return str.replace(/[&<>]/g, m => m === '&' ? '&amp;' : m === '<' ? '&lt;' : '&gt;');
+    }
+    
+    function updateHeaderInfo(name, size = null) {
+        const infoDiv = document.getElementById('pageInfo');
+        if (name) {
+            const shortName = name.length > 30 ? name.substring(0, 27) + '...' : name;
+            if (size) {
+                infoDiv.innerHTML = `<i class="fas fa-file-pdf"></i> ${escapeHtml(shortName)} (${formatFileSize(size)})`;
+            } else {
+                infoDiv.innerHTML = `<i class="fas fa-file-pdf"></i> ${escapeHtml(shortName)}`;
+            }
+        } else {
+            infoDiv.innerHTML = `<i class="fas fa-database"></i> IndexedDB`;
+        }
+    }
+    
+    // ==================== TAMPILKAN PDF ====================
+    async function displayPDF(file) {
+        const loader = document.getElementById('loading');
+        const loadingText = document.getElementById('loadingText');
+        const pdfViewer = document.getElementById('pdfViewer');
+        const emptyState = document.getElementById('emptyState');
+        
+        loader.style.display = 'flex';
+        loadingText.innerText = 'Memuat PDF...';
+        
+        try {
+            // file.data sudah berupa ArrayBuffer dari IndexedDB
+            const blob = new Blob([file.data], { type: 'application/pdf' });
+            const blobUrl = URL.createObjectURL(blob);
+            
+            if (window.currentBlobUrl) {
+                URL.revokeObjectURL(window.currentBlobUrl);
+            }
+            window.currentBlobUrl = blobUrl;
+            
+            emptyState.style.display = 'none';
+            pdfViewer.style.display = 'block';
+            pdfViewer.src = blobUrl;
+            
+            updateHeaderInfo(file.name, file.size);
+            
+            pdfViewer.onload = () => {
+                setTimeout(() => { loader.style.display = 'none'; }, 300);
+            };
+            
+            setTimeout(() => {
+                if (loader.style.display === 'flex') {
+                    loader.style.display = 'none';
+                }
+            }, 2000);
+            
+        } catch (err) {
+            console.error('Error:', err);
+            loader.style.display = 'none';
+            alert('Gagal menampilkan PDF: ' + err.message);
+            emptyState.style.display = 'flex';
+            pdfViewer.style.display = 'none';
+            updateHeaderInfo('');
+        }
+    }
+    
+    // ==================== BUKA FILE ====================
+    async function displayFile(id) {
+        if (!db) {
+            alert('Database belum siap, tunggu sebentar');
+            return;
+        }
+        
+        const file = await getFileById(id);
+        if (!file) {
+            console.error('File tidak ditemukan:', id);
+            return;
+        }
+        
+        currentDocId = id;
+        
+        if (window.innerWidth < 768) {
+            document.getElementById('sidebar').classList.remove('active');
+        }
+        
+        await displayPDF(file);
+        renderLibrary();
+    }
+    
+    // ==================== HAPUS FILE ====================
+    async function deleteFile(id) {
+        if (confirm('Hapus dokumen ini dari perpustakaan?')) {
+            await deleteFileFromDB(id);
+            
+            if (currentDocId === id) {
+                currentDocId = null;
+                const pdfViewer = document.getElementById('pdfViewer');
+                const emptyState = document.getElementById('emptyState');
+                pdfViewer.src = '';
+                pdfViewer.style.display = 'none';
+                emptyState.style.display = 'flex';
+                updateHeaderInfo('');
+            }
+            
+            renderLibrary();
+        }
+    }
+    
+    // ==================== RENDER LIBRARY ====================
+    async function renderLibrary() {
+        if (!db) return;
+        
+        const files = await getAllFiles();
+        const list = document.getElementById('fileList');
+        
+        if (files.length === 0) {
+            list.innerHTML = `
+                <div style="text-align: center; padding: 40px 20px; color: #94a3b8;">
+                    <i class="fas fa-folder-open fa-3x" style="margin-bottom: 12px; opacity: 0.5;"></i>
+                    <p style="font-size: 14px;">Belum ada file PDF</p>
+                    <p style="font-size: 12px; margin-top: 8px;">Tap tombol + untuk menambah</p>
+                    <p style="font-size: 11px; margin-top: 16px;">✅ IndexedDB aktif (penyimpanan besar)</p>
+                </div>
+            `;
+            return;
+        }
+        
+        // Urutkan dari yang terbaru
+        files.sort((a, b) => b.added - a.added);
+        
+        list.innerHTML = files.map(f => `
+            <div class="file-card ${currentDocId === f.id ? 'active' : ''}" onclick="displayFile('${f.id}')">
+                <div style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 190px;">
+                    <i class="fas fa-file-pdf" style="color: #ef4444;"></i> 
+                    <span style="font-size: 13px;">${escapeHtml(f.name)}</span>
+                    <span class="file-size">${formatFileSize(f.size)}</span>
+                </div>
+                <i class="fas fa-trash-alt" style="color:#f87171; padding:6px; border-radius:20px; cursor:pointer;" onclick="event.stopPropagation(); deleteFile('${f.id}')"></i>
+            </div>
+        `).join('');
+    }
+    
+    // ==================== TAMBAH FILE ====================
+    document.getElementById('fileInput').onchange = async function(e) {
+        const file = e.target.files[0];
+        if (!file) return;
+        
+        if (file.type !== 'application/pdf') {
+            alert('📄 Hanya file PDF yang didukung');
+            return;
+        }
+        
+        // Cek ukuran (maks 200MB untuk IndexedDB)
+        if (file.size > 200 * 1024 * 1024) {
+            alert('File terlalu besar (maksimal 200MB)');
+            return;
+        }
+        
+        const loader = document.getElementById('loading');
+        const loadingText = document.getElementById('loadingText');
+        const progressBar = document.getElementById('progressBar');
+        const progressFill = document.getElementById('progressFill');
+        
+        loader.style.display = 'flex';
+        loadingText.innerText = 'Membaca file...';
+        progressBar.style.display = 'block';
+        progressFill.style.width = '0%';
+        
+        try {
+            // Baca file sebagai ArrayBuffer
+            const arrayBuffer = await new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = () => resolve(reader.result);
+                reader.onerror = reject;
+                reader.onprogress = (event) => {
+                    if (event.lengthComputable) {
+                        const percent = (event.loaded / event.total) * 100;
+                        progressFill.style.width = percent + '%';
+                        loadingText.innerText = `Membaca file ${Math.round(percent)}%`;
+                    }
+                };
+                reader.readAsArrayBuffer(file);
+            });
+            
+            progressFill.style.width = '100%';
+            loadingText.innerText = 'Menyimpan ke database...';
+            
+            // Simpan ke IndexedDB
+            const savedDoc = await saveFileToDB(file, arrayBuffer);
+            
+            progressBar.style.display = 'none';
+            loadingText.innerText = 'Selesai!';
+            
+            await renderLibrary();
+            
+            // Buka file yang baru disimpan
+            await displayPDF(savedDoc);
+            currentDocId = savedDoc.id;
+            renderLibrary();
+            
+            setTimeout(() => {
+                loader.style.display = 'none';
+                progressFill.style.width = '0%';
+            }, 500);
+            
+        } catch (err) {
+            console.error(err);
+            loader.style.display = 'none';
+            progressBar.style.display = 'none';
+            
+            if (err.name === 'QuotaExceededError' || err.message.includes('quota')) {
+                alert('⚠️ Penyimpanan penuh! Hapus beberapa file lama terlebih dahulu.');
+            } else {
+                alert('Gagal menyimpan file: ' + err.message);
+            }
+        }
+        
+        e.target.value = '';
+    };
+    
+    // ==================== DRAG & DROP ====================
+    const viewerWrapper = document.getElementById('viewerWrapper');
+    
+    viewerWrapper.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        viewerWrapper.style.opacity = '0.8';
+        viewerWrapper.style.backgroundColor = '#334155';
+    });
+    
+    viewerWrapper.addEventListener('dragleave', (e) => {
+        e.preventDefault();
+        viewerWrapper.style.opacity = '1';
+        viewerWrapper.style.backgroundColor = '';
+    });
+    
+    viewerWrapper.addEventListener('drop', async (e) => {
+        e.preventDefault();
+        viewerWrapper.style.opacity = '1';
+        viewerWrapper.style.backgroundColor = '';
+        
+        const file = e.dataTransfer.files[0];
+        if (file && file.type === 'application/pdf') {
+            document.getElementById('fileInput').files = e.dataTransfer.files;
+            document.getElementById('fileInput').dispatchEvent(new Event('change'));
+        } else if (file) {
+            alert('Drop file PDF saja');
+        }
+    });
+    
+    // ==================== INISIALISASI ====================
+    async function init() {
+        try {
+            await openDatabase();
+            console.log('IndexedDB terkoneksi');
+            await renderLibrary();
+            
+            // Tampilkan file pertama jika ada
+            const files = await getAllFiles();
+            if (files.length > 0) {
+                setTimeout(() => {
+                    displayFile(files[0].id);
+                }, 100);
+            }
+        } catch (err) {
+            console.error('Gagal buka database:', err);
+            document.getElementById('fileList').innerHTML = `
+                <div style="text-align: center; padding: 40px 20px; color: #ef4444;">
+                    <i class="fas fa-exclamation-triangle fa-3x"></i>
+                    <p style="margin-top: 12px;">Gagal mengakses penyimpanan</p>
+                    <small>Browser mungkin tidak mendukung IndexedDB</small>
+                </div>
+            `;
+        }
+    }
+    
+    init();
+    
+    window.addEventListener('beforeunload', () => {
+        if (window.currentBlobUrl) {
+            URL.revokeObjectURL(window.currentBlobUrl);
+        }
+    });
+</script>
+</body>
+</html>
