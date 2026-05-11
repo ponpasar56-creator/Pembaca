@@ -1,0 +1,696 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
+    <title>DocuMind Vault - Fast PDF Reader</title>
+    
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#1e4a6e">
+
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
+
+    <style>
+        :root { --primary: #1e4a6e; --bg: #f8fafc; }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        body { font-family: 'Inter', sans-serif; background: var(--bg); height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
+
+        /* Header minimalis */
+        .app-bar {
+            background: white; padding: 8px 15px; display: flex; align-items: center; 
+            justify-content: space-between; gap: 10px; z-index: 100; border-bottom: 1px solid #e2e8f0;
+        }
+        
+        .logo-area { display: flex; align-items: center; gap: 8px; }
+        .logo-icon img { width: 28px; height: 28px; border-radius: 6px; }
+        .logo-text { font-weight: 800; font-size: 1rem; color: var(--primary); display: none; }
+        @media (min-width: 480px) { .logo-text { display: block; } }
+
+        .info-status {
+            background: #e2e8f0;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 600;
+            color: #1e293b;
+        }
+
+        /* Main Layout */
+        .main-layout { flex: 1; display: flex; overflow: hidden; position: relative; }
+
+        /* Sidebar Library */
+        .sidebar {
+            width: 280px; background: white; border-right: 1px solid #e2e8f0;
+            display: flex; flex-direction: column; transition: 0.3s ease;
+            position: absolute; left: -280px; top: 0; bottom: 0; z-index: 200;
+            box-shadow: 2px 0 12px rgba(0,0,0,0.1);
+        }
+        .sidebar.active { left: 0; }
+        .sidebar-header { padding: 15px; border-bottom: 1px solid #f1f5f9; display: flex; justify-content: space-between; align-items: center; }
+
+        .file-list { flex: 1; overflow-y: auto; padding: 10px; }
+        .file-card {
+            background: #fff; border: 1px solid #e2e8f0; padding: 10px; border-radius: 12px;
+            margin-bottom: 8px; cursor: pointer; display: flex; justify-content: space-between; align-items: center;
+            transition: all 0.2s;
+        }
+        .file-card:hover { border-color: var(--primary); background: #f8fafc; }
+        .file-card.active { background: #eff6ff; border-color: var(--primary); }
+
+        /* ========== VIEWER DENGAN VIRTUAL SCROLL & ZOOM ========== */
+        .viewer-wrapper {
+            flex: 1;
+            position: relative;
+            overflow: hidden;
+            background: #525659;
+        }
+        
+        .zoom-container {
+            width: 100%;
+            height: 100%;
+            overflow: auto;
+            position: relative;
+            scroll-behavior: smooth;
+        }
+        
+        /* SCROLLBAR BESAR */
+        .zoom-container::-webkit-scrollbar {
+            width: 14px;
+            height: 14px;
+        }
+        .zoom-container::-webkit-scrollbar-track {
+            background: #2d2f33;
+            border-radius: 10px;
+        }
+        .zoom-container::-webkit-scrollbar-thumb {
+            background: #888;
+            border-radius: 10px;
+            border: 2px solid #2d2f33;
+            min-height: 60px;
+        }
+        .zoom-container::-webkit-scrollbar-thumb:hover {
+            background: #aaa;
+        }
+        
+        .zoomed-content {
+            transform-origin: 0 0;
+            transition: transform 0.05s linear;
+            will-change: transform;
+            width: fit-content;
+            min-width: 100%;
+        }
+        
+        .viewer-content {
+            background: #525659;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 20px;
+        }
+        
+        .page-wrapper {
+            position: relative;
+            background: white;
+            margin-bottom: 20px;
+            box-shadow: 0 8px 20px rgba(0,0,0,0.4);
+            border-radius: 4px;
+            transition: opacity 0.2s;
+        }
+        
+        .page-wrapper.loading {
+            opacity: 0.5;
+        }
+        
+        canvas {
+            display: block;
+            max-width: 100%;
+            height: auto;
+            border-radius: 4px;
+        }
+        
+        /* Floating Buttons */
+        .fab-group {
+            position: fixed;
+            bottom: 24px;
+            right: 24px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            z-index: 300;
+        }
+        .fab {
+            width: 52px;
+            height: 52px;
+            border-radius: 50%;
+            border: none;
+            color: white;
+            box-shadow: 0 6px 14px rgba(0,0,0,0.3);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 22px;
+            cursor: pointer;
+            transition: transform 0.1s, background 0.2s;
+        }
+        .fab:active { transform: scale(0.95); }
+        .btn-add { background: var(--primary); }
+        .btn-lib { background: #475569; }
+        .btn-zoom-reset { background: #334155; }
+        
+        #loading {
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.9);
+            color: white;
+            display: none;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+            backdrop-filter: blur(4px);
+        }
+        
+        .progress-bar {
+            width: 200px;
+            height: 4px;
+            background: #334155;
+            border-radius: 4px;
+            margin-top: 16px;
+            overflow: hidden;
+        }
+        
+        .progress-fill {
+            height: 100%;
+            background: #3b82f6;
+            width: 0%;
+            transition: width 0.2s;
+        }
+        
+        @media (max-width: 640px) {
+            .zoom-container::-webkit-scrollbar {
+                width: 10px;
+                height: 10px;
+            }
+            .fab-group { bottom: 16px; right: 16px; gap: 10px; }
+            .fab { width: 48px; height: 48px; font-size: 20px; }
+        }
+    </style>
+</head>
+<body>
+
+<div id="loading">
+    <i class="fas fa-spinner fa-pulse fa-2x"></i>
+    <p style="margin-top:12px; font-weight:500;">Memuat dokumen...</p>
+    <div class="progress-bar">
+        <div class="progress-fill" id="progressFill"></div>
+    </div>
+    <p style="margin-top:8px; font-size:12px;" id="progressText">Menganalisis halaman</p>
+</div>
+
+<header class="app-bar">
+    <div class="logo-area">
+        <div class="logo-icon"><img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' fill='%231e4a6e'/%3E%3Ctext x='50%25' y='50%25' dominant-baseline='middle' text-anchor='middle' fill='white' font-size='48' font-weight='bold'%3EDV%3C/text%3E%3C/svg%3E" alt="Logo"></div>
+        <div class="logo-text">DocuMind Vault</div>
+    </div>
+    <div class="info-status" id="pageInfo">
+        <i class="fas fa-file-pdf"></i> Siap
+    </div>
+</header>
+
+<div class="main-layout">
+    <aside class="sidebar" id="sidebar">
+        <div class="sidebar-header">
+            <strong><i class="fas fa-book-open"></i> Pustaka Saya</strong>
+            <button onclick="toggleSidebar()" style="border:none; background:none; font-size:18px; cursor:pointer;"><i class="fas fa-times"></i></button>
+        </div>
+        <div class="file-list" id="fileList"></div>
+    </aside>
+
+    <div class="viewer-wrapper">
+        <div class="zoom-container" id="zoomContainer">
+            <div class="zoomed-content" id="zoomedContent">
+                <div id="viewer" class="viewer-content">
+                    <div style="color:#cbd5e1; text-align:center; margin-top:120px;">
+                        <i class="fas fa-file-pdf fa-5x" style="opacity:0.4;"></i>
+                        <p style="margin-top:16px; font-weight:500;">📄 Tap + untuk tambah PDF</p>
+                        <p style="margin-top:8px; font-size:14px;">Membaca file besar jadi super cepat!</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="fab-group">
+    <button class="fab btn-zoom-reset" onclick="resetZoom()" title="Reset zoom"><i class="fas fa-expand-alt"></i></button>
+    <button class="fab btn-lib" onclick="toggleSidebar()"><i class="fas fa-folder"></i></button>
+    <button class="fab btn-add" onclick="document.getElementById('fileInput').click()"><i class="fas fa-plus"></i></button>
+</div>
+
+<input type="file" id="fileInput" hidden accept=".pdf">
+
+<script>
+    // ==================== KONFIGURASI ====================
+    const pdfjsLib = window['pdfjs-dist/build/pdf'];
+    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';
+    
+    // Data storage
+    let dbFiles = JSON.parse(localStorage.getItem('docu_vault_fast') || '[]');
+    let currentDocId = null;
+    let currentPDF = null;
+    let totalPages = 0;
+    let renderedPages = new Set(); // halaman yang sudah dirender
+    let pageElements = new Map(); // pageNum -> wrapper element
+    let isLoadingDocument = false;
+    
+    // Zoom variables
+    let currentZoom = 1.0;
+    const MIN_ZOOM = 0.5;
+    const MAX_ZOOM = 4.0;
+    let zoomedContentDiv = document.getElementById('zoomedContent');
+    let zoomContainer = document.getElementById('zoomContainer');
+    
+    // Observer untuk virtual scroll (render halaman saat terlihat)
+    let intersectionObserver = null;
+    
+    // ==================== ZOOM & GESTURE ====================
+    function applyZoom() {
+        if (!zoomedContentDiv) return;
+        zoomedContentDiv.style.transform = `scale(${currentZoom})`;
+        setTimeout(() => zoomContainer?.dispatchEvent(new Event('scroll')), 30);
+    }
+    
+    function resetZoom() {
+        currentZoom = 1.0;
+        applyZoom();
+        zoomContainer.scrollTo({ left: 0, top: 0, behavior: 'smooth' });
+    }
+    
+    // Pinch-to-zoom
+    let initialDistance = 0, initialZoom = 1.0, isPinching = false;
+    function getDistance(touches) {
+        if (touches.length < 2) return 0;
+        const dx = touches[0].clientX - touches[1].clientX;
+        const dy = touches[0].clientY - touches[1].clientY;
+        return Math.hypot(dx, dy);
+    }
+    
+    function onTouchStart(e) {
+        if (e.touches.length === 2) {
+            e.preventDefault();
+            initialDistance = getDistance(e.touches);
+            initialZoom = currentZoom;
+            isPinching = true;
+        }
+    }
+    
+    function onTouchMove(e) {
+        if (isPinching && e.touches.length === 2) {
+            e.preventDefault();
+            const newDistance = getDistance(e.touches);
+            if (initialDistance > 0) {
+                let ratio = newDistance / initialDistance;
+                let newZoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, initialZoom * ratio));
+                if (Math.abs(newZoom - currentZoom) > 0.01) {
+                    currentZoom = newZoom;
+                    applyZoom();
+                }
+            }
+        }
+    }
+    
+    function onTouchEnd(e) { isPinching = false; initialDistance = 0; }
+    
+    if (zoomContainer) {
+        zoomContainer.addEventListener('touchstart', onTouchStart, { passive: false });
+        zoomContainer.addEventListener('touchmove', onTouchMove, { passive: false });
+        zoomContainer.addEventListener('touchend', onTouchEnd);
+        zoomContainer.addEventListener('wheel', (e) => {
+            if (e.ctrlKey) {
+                e.preventDefault();
+                const delta = -e.deltaY * 0.008;
+                let newZoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, currentZoom + delta));
+                if (newZoom !== currentZoom) {
+                    currentZoom = newZoom;
+                    applyZoom();
+                }
+            }
+        }, { passive: false });
+    }
+    
+    // ==================== UTILITIES ====================
+    function toggleSidebar() { 
+        document.getElementById('sidebar').classList.toggle('active'); 
+    }
+    
+    function escapeHtml(str) {
+        if(!str) return '';
+        return str.replace(/[&<>]/g, m => m === '&' ? '&amp;' : m === '<' ? '&lt;' : '&gt;');
+    }
+    
+    function updatePageInfo(currentPage, total) {
+        const infoDiv = document.getElementById('pageInfo');
+        if (total) {
+            infoDiv.innerHTML = `<i class="fas fa-file-pdf"></i> Halaman ${currentPage || 1}/${total}`;
+        } else {
+            infoDiv.innerHTML = `<i class="fas fa-file-pdf"></i> Siap`;
+        }
+    }
+    
+    // Render satu halaman PDF dengan kualitas optimal
+    async function renderPageNumber(pageNum, scale = 1.5) {
+        if (!currentPDF) return null;
+        
+        const wrapper = pageElements.get(pageNum);
+        if (!wrapper) return null;
+        
+        // Cek sudah ter-render
+        if (renderedPages.has(pageNum)) return;
+        
+        wrapper.classList.add('loading');
+        
+        try {
+            const page = await currentPDF.getPage(pageNum);
+            const viewport = page.getViewport({ scale: scale });
+            
+            // Cari canvas di dalam wrapper
+            let canvas = wrapper.querySelector('canvas');
+            if (!canvas) {
+                canvas = document.createElement('canvas');
+                wrapper.appendChild(canvas);
+            }
+            
+            canvas.width = viewport.width;
+            canvas.height = viewport.height;
+            canvas.style.width = '100%';
+            canvas.style.height = 'auto';
+            
+            await page.render({
+                canvasContext: canvas.getContext('2d'),
+                viewport: viewport,
+                intent: 'display' // lebih cepat
+            }).promise;
+            
+            renderedPages.add(pageNum);
+            wrapper.classList.remove('loading');
+            
+        } catch (err) {
+            console.warn(`Gagal render halaman ${pageNum}:`, err);
+            wrapper.classList.remove('loading');
+            // Tampilkan pesan error di wrapper
+            const errorDiv = document.createElement('div');
+            errorDiv.style.cssText = 'position:absolute; inset:0; display:flex; align-items:center; justify-content:center; background:#fef2f2; color:#991b1b; font-size:12px;';
+            errorDiv.innerHTML = '<i class="fas fa-exclamation-triangle"></i> Gagal render';
+            wrapper.appendChild(errorDiv);
+        }
+    }
+    
+    // Setup Intersection Observer untuk render halaman yang terlihat
+    function setupIntersectionObserver() {
+        if (intersectionObserver) {
+            intersectionObserver.disconnect();
+        }
+        
+        intersectionObserver = new IntersectionObserver((entries) => {
+            entries.forEach(entry => {
+                if (entry.isIntersecting) {
+                    const wrapper = entry.target;
+                    const pageNum = parseInt(wrapper.getAttribute('data-page'));
+                    if (pageNum && !renderedPages.has(pageNum)) {
+                        renderPageNumber(pageNum);
+                    }
+                }
+            });
+        }, { threshold: 0.1, rootMargin: '200px' }); // Prerender 200px sebelum masuk viewport
+        
+        // Observasi semua page wrapper
+        pageElements.forEach((wrapper, pageNum) => {
+            intersectionObserver.observe(wrapper);
+        });
+    }
+    
+    // Membuat struktur halaman (tanpa render dulu)
+    function createPageStructure(totalPagesNum) {
+        const viewerDiv = document.getElementById('viewer');
+        viewerDiv.innerHTML = '';
+        pageElements.clear();
+        renderedPages.clear();
+        
+        for (let i = 1; i <= totalPagesNum; i++) {
+            const wrapper = document.createElement('div');
+            wrapper.className = 'page-wrapper';
+            wrapper.setAttribute('data-page', i);
+            wrapper.style.minHeight = '400px'; // placeholder height
+            wrapper.style.backgroundColor = '#f1f5f9';
+            wrapper.style.display = 'flex';
+            wrapper.style.alignItems = 'center';
+            wrapper.style.justifyContent = 'center';
+            
+            // Loading indicator sementara
+            const loaderSpan = document.createElement('div');
+            loaderSpan.style.cssText = 'color:#94a3b8; padding:40px; text-align:center;';
+            loaderSpan.innerHTML = '<i class="fas fa-spinner fa-pulse"></i> Memuat halaman...';
+            wrapper.appendChild(loaderSpan);
+            
+            viewerDiv.appendChild(wrapper);
+            pageElements.set(i, wrapper);
+        }
+        
+        setupIntersectionObserver();
+        
+        // Render halaman pertama segera untuk kesan cepat
+        if (totalPagesNum > 0) {
+            setTimeout(() => renderPageNumber(1), 50);
+            // render halaman 2 juga untuk persiapan scroll
+            if (totalPagesNum >= 2) {
+                setTimeout(() => renderPageNumber(2), 200);
+            }
+        }
+    }
+    
+    // ==================== LOAD PDF DENGAN OPTIMASI EKSTREM ====================
+    async function loadPDFFast(fileData, docId) {
+        const loader = document.getElementById('loading');
+        const progressFill = document.getElementById('progressFill');
+        const progressText = document.getElementById('progressText');
+        
+        loader.style.display = 'flex';
+        progressFill.style.width = '0%';
+        progressText.innerText = 'Membuka dokumen...';
+        
+        try {
+            // Load PDF document
+            progressFill.style.width = '20%';
+            progressText.innerText = 'Memproses file PDF...';
+            
+            const pdf = await pdfjsLib.getDocument({ 
+                data: fileData,
+                useSystemFonts: true,
+                disableFontFace: false,
+                verbosity: 0
+            }).promise;
+            
+            currentPDF = pdf;
+            totalPages = pdf.numPages;
+            
+            progressFill.style.width = '50%';
+            progressText.innerText = `Menyiapkan ${totalPages} halaman...`;
+            
+            // Buat struktur halaman
+            createPageStructure(totalPages);
+            
+            progressFill.style.width = '100%';
+            progressText.innerText = 'Selesai!';
+            
+            setTimeout(() => {
+                loader.style.display = 'none';
+                updatePageInfo(1, totalPages);
+                
+                // Scroll ke atas
+                if (zoomContainer) {
+                    zoomContainer.scrollTo({ left: 0, top: 0, behavior: 'auto' });
+                }
+            }, 300);
+            
+        } catch (err) {
+            console.error(err);
+            loader.style.display = 'none';
+            alert('Gagal membuka PDF: ' + err.message);
+            throw err;
+        }
+    }
+    
+    // ==================== DISPLAY FILE ====================
+    async function displayFile(id) {
+        if (isLoadingDocument) return;
+        
+        const file = dbFiles.find(f => f.id === id);
+        if (!file) return;
+        
+        currentDocId = id;
+        isLoadingDocument = true;
+        
+        // Reset zoom
+        currentZoom = 1.0;
+        applyZoom();
+        
+        // Bersihkan observer lama
+        if (intersectionObserver) {
+            intersectionObserver.disconnect();
+            intersectionObserver = null;
+        }
+        
+        // Reset state
+        renderedPages.clear();
+        pageElements.clear();
+        currentPDF = null;
+        
+        // Tampilkan loading ringan di viewer
+        const viewerDiv = document.getElementById('viewer');
+        viewerDiv.innerHTML = `<div style="color:#94a3b8; text-align:center; margin-top:80px;">
+            <i class="fas fa-spinner fa-pulse fa-3x"></i>
+            <p style="margin-top:16px;">Membuka file...</p>
+        </div>`;
+        
+        if (document.getElementById('sidebar').classList.contains('active')) toggleSidebar();
+        
+        // Konversi base64 ke array buffer
+        const binaryString = atob(file.data);
+        const bytes = new Uint8Array(binaryString.length);
+        for (let i = 0; i < binaryString.length; i++) {
+            bytes[i] = binaryString.charCodeAt(i);
+        }
+        
+        try {
+            await loadPDFFast(bytes.buffer, file.id);
+            updatePageInfo(1, totalPages);
+            
+            // Scroll listener untuk update page info saat scroll
+            const handleScroll = () => {
+                if (!pageElements.size) return;
+                const scrollTop = zoomContainer.scrollTop;
+                let currentPage = 1;
+                for (let [pageNum, wrapper] of pageElements) {
+                    const offsetTop = wrapper.offsetTop;
+                    if (scrollTop + 150 >= offsetTop) {
+                        currentPage = pageNum;
+                    } else {
+                        break;
+                    }
+                }
+                updatePageInfo(currentPage, totalPages);
+            };
+            
+            zoomContainer.removeEventListener('scroll', handleScroll);
+            zoomContainer.addEventListener('scroll', handleScroll);
+            
+        } catch (err) {
+            viewerDiv.innerHTML = `<div style="background:#fff0f0; color:#b91c1c; padding:20px; margin:20px; border-radius:12px;">
+                <i class="fas fa-exclamation-triangle"></i> Gagal: ${err.message}
+            </div>`;
+        } finally {
+            isLoadingDocument = false;
+        }
+    }
+    
+    // ==================== MANAJEMEN FILE ====================
+    function renderLibrary() {
+        const list = document.getElementById('fileList');
+        if (!list) return;
+        list.innerHTML = dbFiles.map(f => `
+            <div class="file-card" onclick="displayFile('${f.id}')">
+                <div style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:200px; font-size:13px;">
+                    <i class="fas fa-file-pdf"></i> ${escapeHtml(f.name)}
+                </div>
+                <i class="fas fa-trash-alt" style="color:#f87171; padding:6px; border-radius:20px;" onclick="event.stopPropagation(); deleteFile('${f.id}')"></i>
+            </div>
+        `).join('');
+    }
+    
+    async function deleteFile(id) {
+        dbFiles = dbFiles.filter(f => f.id !== id);
+        localStorage.setItem('docu_vault_fast', JSON.stringify(dbFiles));
+        renderLibrary();
+        if (currentDocId === id) {
+            document.getElementById('viewer').innerHTML = `<div style="color:#94a3b8; text-align:center; margin-top:120px;">
+                <i class="fas fa-trash-alt fa-4x"></i>
+                <p>Dokumen telah dihapus</p>
+                <p style="margin-top:8px; font-size:14px;">Tap + untuk tambah PDF baru</p>
+            </div>`;
+            currentDocId = null;
+            currentPDF = null;
+            if (intersectionObserver) {
+                intersectionObserver.disconnect();
+                intersectionObserver = null;
+            }
+            updatePageInfo(0, 0);
+        }
+    }
+    
+    // ==================== TAMBAH FILE BARU ====================
+    document.getElementById('fileInput').onchange = function(e) {
+        const file = e.target.files[0];
+        if(!file) return;
+        
+        if(file.type !== 'application/pdf') {
+            alert('Hanya support file PDF untuk kecepatan maksimal');
+            return;
+        }
+        
+        const loader = document.getElementById('loading');
+        const progressFill = document.getElementById('progressFill');
+        const progressText = document.getElementById('progressText');
+        
+        loader.style.display = 'flex';
+        progressFill.style.width = '10%';
+        progressText.innerText = 'Membaca file...';
+        
+        const reader = new FileReader();
+        reader.onload = function(evt) {
+            const binary = evt.target.result;
+            const bytes = new Uint8Array(binary);
+            let binaryString = '';
+            // Chunk encoding untuk performa
+            const chunkSize = 16384;
+            for (let i = 0; i < bytes.length; i += chunkSize) {
+                const chunk = bytes.subarray(i, Math.min(i + chunkSize, bytes.length));
+                binaryString += String.fromCharCode.apply(null, chunk);
+            }
+            const base64 = btoa(binaryString);
+            const newDoc = { 
+                id: Date.now().toString(), 
+                name: file.name, 
+                data: base64, 
+                type: 'pdf' 
+            };
+            dbFiles.unshift(newDoc);
+            localStorage.setItem('docu_vault_fast', JSON.stringify(dbFiles));
+            renderLibrary();
+            
+            progressFill.style.width = '80%';
+            progressText.innerText = 'Menyimpan...';
+            
+            setTimeout(() => {
+                loader.style.display = 'none';
+                displayFile(newDoc.id);
+            }, 100);
+        };
+        reader.readAsArrayBuffer(file);
+    };
+    
+    // ==================== INIT ====================
+    renderLibrary();
+    
+    // Jika ada file, tampilkan yang pertama
+    if (dbFiles.length > 0) {
+        setTimeout(() => {
+            displayFile(dbFiles[0].id);
+        }, 200);
+    }
+</script>
+</body>
+</html>
